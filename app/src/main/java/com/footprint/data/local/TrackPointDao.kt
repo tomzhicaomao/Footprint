@@ -17,6 +17,11 @@ interface TrackPointDao {
         )
         suspend fun getPointsInRangeOnce(start: Long, end: Long): List<TrackPointEntity>
 
+        @Query(
+                "SELECT * FROM track_points WHERE sessionId = :sessionId ORDER BY timestamp ASC"
+        )
+        suspend fun getPointsBySessionId(sessionId: Long): List<TrackPointEntity>
+
         @Query("SELECT * FROM track_points WHERE timestamp >= :since ORDER BY timestamp ASC")
         fun getPointsSince(since: Long): Flow<List<TrackPointEntity>>
 

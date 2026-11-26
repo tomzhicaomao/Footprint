@@ -707,6 +707,7 @@ class FootprintViewModel(
                 when (transportType) {
                     com.footprint.data.model.TransportType.WALK -> distanceKm * 0.16
                     com.footprint.data.model.TransportType.BIKE -> distanceKm * 0.12
+                    com.footprint.data.model.TransportType.EBIKE -> distanceKm * 0.14
                     com.footprint.data.model.TransportType.TRAIN -> distanceKm * 0.04
                     else -> 0.0
                 }

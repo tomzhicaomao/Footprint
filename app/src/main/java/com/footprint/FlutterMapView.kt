@@ -49,11 +49,14 @@ class FlutterMapView(
 
     // 数据引用
     private var currentPathPoints: List<LatLng> = emptyList()
+    private var currentPathSpeedsKmh: List<Float> = emptyList()
     private var historyPoints: List<LatLng> = emptyList()
     private var historySegments: List<List<LatLng>> = emptyList()
+    private var followRidingCamera: Boolean = false
 
     private var livePolyline: Polyline? = null
     private val historyPolylines = mutableListOf<Polyline>()
+    private val trackEndpointMarkers = mutableListOf<Marker>()
     private var heatmapOverlay: TileOverlay? = null
     private val markerList = mutableListOf<Marker>()
     private val capsuleMarkers = mutableListOf<Marker>()
@@ -134,8 +137,13 @@ class FlutterMapView(
         scope.launch {
             LocationTrackingService.trackingPath.collectLatest { locations ->
                 currentPathPoints = locations.map { LatLng(it.latitude, it.longitude) }
+                currentPathSpeedsKmh = locations.map { (it.speed.coerceAtLeast(0f)) * 3.6f }
                 fogOverlay.updateLivePathMercatorCache()
                 updateLivePolyline()
+                if (followRidingCamera && currentPathPoints.isNotEmpty()) {
+                    val last = currentPathPoints.last()
+                    aMap?.animateCamera(CameraUpdateFactory.changeLatLng(last))
+                }
                 if (heatmapOverlay != null) updateHeatmap()
                 fogOverlay.requestRender()
             }
@@ -178,12 +186,12 @@ class FlutterMapView(
         livePolyline?.remove()
         livePolyline = null
         val smoothedPoints = com.footprint.utils.PathInterpolator.interpolate(currentPathPoints, 8)
-        val gradientColors = getGradientColorsForSmoothedPoints(smoothedPoints)
+        val gradientColors = getGradientColorsForSmoothedPoints(smoothedPoints, currentPathSpeedsKmh)
         livePolyline =
                 map.addPolyline(
                         PolylineOptions()
                                 .addAll(smoothedPoints)
-                                .width(if (currentMode == "CAPSULE") 10f else 12f)
+                                .width(if (currentMode == "CAPSULE") 10f else 14f)
                                 .useGradient(true)
                                 .colorValues(gradientColors)
                                 .lineCapType(PolylineOptions.LineCapType.LineCapRound)
@@ -267,35 +275,53 @@ class FlutterMapView(
         }
     }
 
-    private fun getGradientColorsForSmoothedPoints(points: List<LatLng>): List<Int> {
+    private fun getGradientColorsForSmoothedPoints(
+            points: List<LatLng>,
+            rawSpeedsKmh: List<Float> = emptyList()
+    ): List<Int> {
         if (points.isEmpty()) return emptyList()
         val colors = mutableListOf<Int>()
+        val hasRealSpeeds = rawSpeedsKmh.size >= 2 && rawSpeedsKmh.any { it > 0.5f }
+        val maxPointIdx = (points.size - 1).coerceAtLeast(1)
+        val maxSpeedIdx = (rawSpeedsKmh.size - 1).coerceAtLeast(1)
+
         for (i in 0 until points.size) {
-            val current = points[i]
-            val prev = if (i > 0) points[i - 1] else current
-            val next = if (i < points.size - 1) points[i + 1] else current
-            
-            val results = FloatArray(1)
-            android.location.Location.distanceBetween(prev.latitude, prev.longitude, next.latitude, next.longitude, results)
-            
-            val dist = results[0]
-            val approxSpeedMs = dist / 1.25f
-            val speedKmh = approxSpeedMs * 3.6f
-            
-            val color = getSmoothColorForSpeed(speedKmh)
-            colors.add(color)
+            val speedKmh =
+                    if (hasRealSpeeds) {
+                        val mappedPos = (i.toFloat() / maxPointIdx) * maxSpeedIdx
+                        val lowIdx = mappedPos.toInt().coerceIn(0, maxSpeedIdx)
+                        val highIdx = (lowIdx + 1).coerceIn(0, maxSpeedIdx)
+                        val frac = mappedPos - lowIdx
+                        rawSpeedsKmh[lowIdx] * (1f - frac) + rawSpeedsKmh[highIdx] * frac
+                    } else {
+                        val current = points[i]
+                        val prev = if (i > 0) points[i - 1] else current
+                        val next = if (i < points.size - 1) points[i + 1] else current
+                        val results = FloatArray(1)
+                        android.location.Location.distanceBetween(
+                                prev.latitude,
+                                prev.longitude,
+                                next.latitude,
+                                next.longitude,
+                                results
+                        )
+                        val dist = results[0]
+                        (dist / 2.0f) * 3.6f
+                    }
+            colors.add(getSmoothColorForSpeed(speedKmh))
         }
         return colors
     }
 
     private fun getSmoothColorForSpeed(speedKmh: Float): Int {
-        val speedPoints = floatArrayOf(0f, 4f, 10f, 20f, 40f)
+        // Tuned for e-bike & urban riding speed bands (km/h)
+        val speedPoints = floatArrayOf(0f, 8f, 18f, 28f, 40f)
         val colors = intArrayOf(
-            Color.parseColor("#2196F3"), // Blue (Walking slow/Standing)
-            Color.parseColor("#4CAF50"), // Green (Walking/Hiking)
-            Color.parseColor("#FFEB3B"), // Yellow (Cycling)
-            Color.parseColor("#FF9800"), // Orange (City Driving)
-            Color.parseColor("#F44336")  // Red (Highway)
+            Color.parseColor("#2196F3"), // Blue (Slow / Starting)
+            Color.parseColor("#00C853"), // Emerald Green (Eco Cruise)
+            Color.parseColor("#FFD600"), // Amber Yellow (Standard E-Bike 20-25 km/h)
+            Color.parseColor("#FF6D00"), // Vivid Orange (Fast Ride 28-40 km/h)
+            Color.parseColor("#F44336")  // Red (Top Speed 40+ km/h)
         )
 
         if (speedKmh <= speedPoints[0]) return colors[0]
@@ -1025,28 +1051,44 @@ class FlutterMapView(
                 result.success(true)
             }
             "setTrackingPath" -> {
-                // 用于显示单个历史足迹轨迹 (Detail Page 使用)
-                val points: List<Any?> = (call.arguments as? List<*>) ?: emptyList()
+                // 用于显示单个历史足迹轨迹 (Detail Page / Playback 使用)
+                val rawArgs = call.arguments
+                val points: List<Any?>
+                var showEndpoints = true
+                var autoFit = false
+                if (rawArgs is Map<*, *>) {
+                    points = (rawArgs["points"] as? List<*>) ?: emptyList()
+                    showEndpoints = (rawArgs["showEndpoints"] as? Boolean) ?: true
+                    autoFit = (rawArgs["fitBounds"] as? Boolean) ?: true
+                } else {
+                    points = (rawArgs as? List<*>) ?: emptyList()
+                }
+
                 val latLngs = mutableListOf<LatLng>()
+                val speedsKmh = mutableListOf<Float>()
                 points.forEach {
                     val itMap = it as? Map<*, *> ?: return@forEach
                     val lat = (itMap["lat"] as? Number)?.toDouble() ?: (itMap["latitude"] as? Number)?.toDouble()
                     val lng = (itMap["lng"] as? Number)?.toDouble() ?: (itMap["longitude"] as? Number)?.toDouble()
                     if (lat != null && lng != null) {
                         latLngs.add(LatLng(lat, lng))
+                        val spdMs = (itMap["speed"] as? Number)?.toFloat() ?: 0f
+                        speedsKmh.add(spdMs.coerceAtLeast(0f) * 3.6f)
                     }
                 }
-                
+
                 historyPolylines.forEach { it.remove() }
                 historyPolylines.clear()
-                
+                trackEndpointMarkers.forEach { it.remove() }
+                trackEndpointMarkers.clear()
+
                 if (latLngs.size >= 2) {
                     val smoothedPoints = com.footprint.utils.PathInterpolator.interpolate(latLngs, 8)
-                    val gradientColors = getGradientColorsForSmoothedPoints(smoothedPoints)
+                    val gradientColors = getGradientColorsForSmoothedPoints(smoothedPoints, speedsKmh)
                     val polyline = aMap?.addPolyline(
                         PolylineOptions()
                                 .addAll(smoothedPoints)
-                                .width(if (currentMode == "CAPSULE") 10f else 12f)
+                                .width(if (currentMode == "CAPSULE") 10f else 14f)
                                 .useGradient(true)
                                 .colorValues(gradientColors)
                                 .lineCapType(PolylineOptions.LineCapType.LineCapRound)
@@ -1054,7 +1096,45 @@ class FlutterMapView(
                                 .zIndex(95f)
                     )
                     polyline?.let { historyPolylines.add(it) }
+
+                    if (showEndpoints) {
+                        aMap?.addMarker(
+                                MarkerOptions()
+                                        .position(latLngs.first())
+                                        .title("起点")
+                                        .icon(createEndpointMarkerIcon("起", Color.parseColor("#00C853")))
+                                        .anchor(0.5f, 0.5f)
+                                        .zIndex(110f)
+                        )?.let { trackEndpointMarkers.add(it) }
+                        aMap?.addMarker(
+                                MarkerOptions()
+                                        .position(latLngs.last())
+                                        .title("终点")
+                                        .icon(createEndpointMarkerIcon("终", Color.parseColor("#FF5252")))
+                                        .anchor(0.5f, 0.5f)
+                                        .zIndex(110f)
+                        )?.let { trackEndpointMarkers.add(it) }
+                    }
+
+                    if (autoFit) {
+                        fitCameraToPoints(latLngs)
+                    }
                 }
+                result.success(true)
+            }
+            "fitTrackBounds" -> {
+                val points = (call.arguments as? List<*>) ?: emptyList<Any?>()
+                val latLngs = points.mapNotNull {
+                    val m = it as? Map<*, *> ?: return@mapNotNull null
+                    val lat = (m["lat"] as? Number)?.toDouble() ?: (m["latitude"] as? Number)?.toDouble()
+                    val lng = (m["lng"] as? Number)?.toDouble() ?: (m["longitude"] as? Number)?.toDouble()
+                    if (lat != null && lng != null) LatLng(lat, lng) else null
+                }
+                fitCameraToPoints(latLngs)
+                result.success(true)
+            }
+            "setFollowLocation" -> {
+                followRidingCamera = call.arguments as? Boolean ?: false
                 result.success(true)
             }
             "centerLocation" -> {
@@ -1170,6 +1250,55 @@ class FlutterMapView(
                 result.success(true)
             }
         }
+    }
+
+    private fun fitCameraToPoints(points: List<LatLng>) {
+        val map = aMap ?: return
+        if (points.isEmpty()) return
+        if (points.size == 1) {
+            map.animateCamera(CameraUpdateFactory.newLatLngZoom(points.first(), 16f))
+            return
+        }
+        try {
+            val builder = LatLngBounds.Builder()
+            points.forEach { builder.include(it) }
+            val bounds = builder.build()
+            map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100))
+        } catch (_: Exception) {
+            map.animateCamera(CameraUpdateFactory.newLatLngZoom(points.first(), 15f))
+        }
+    }
+
+    private fun createEndpointMarkerIcon(label: String, bgColor: Int): BitmapDescriptor {
+        val density = context.resources.displayMetrics.density
+        val sizePx = (30f * density).toInt().coerceAtLeast(48)
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val cx = sizePx / 2f
+        val cy = sizePx / 2f
+        val radius = sizePx * 0.42f
+
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+            setShadowLayer(4f, 0f, 2f, Color.argb(90, 0, 0, 0))
+        }
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = bgColor
+            style = Paint.Style.FILL
+        }
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = sizePx * 0.44f
+            typeface = Typeface.DEFAULT_BOLD
+            textAlign = Paint.Align.CENTER
+        }
+
+        canvas.drawCircle(cx, cy, radius + 3f, borderPaint)
+        canvas.drawCircle(cx, cy, radius, fillPaint)
+        val textOffset = (textPaint.descent() + textPaint.ascent()) / 2f
+        canvas.drawText(label, cx, cy - textOffset, textPaint)
+        return BitmapDescriptorFactory.fromBitmap(bitmap)
     }
 
     override fun dispose() {

@@ -17,10 +17,11 @@ import 'footprint_detail_page.dart';
 import 'goal_planner_page.dart';
 import 'badge_hall_screen.dart';
 import 'easter_egg.dart';
+import 'ebike_ride_widgets.dart';
 import 'package:flutter/foundation.dart';
 
-const String kAppVersionName = '3.8.2';
-const int kAppBuildNumber = 58;
+const String kAppVersionName = '3.9.0';
+const int kAppBuildNumber = 59;
 const String kAppVersionLabel = 'Footprint v$kAppVersionName (Build $kAppBuildNumber)';
 
 const Color kAtelierCanvas = Color(0xFFF4EFE7);
@@ -335,22 +336,20 @@ class _AddFootprintPageState extends State<AddFootprintPage> {
   late TextEditingController _tempController;
   late TextEditingController _altController;
 
-  String selectedIcon = "LocationOn";
+  String selectedIcon = "ElectricScooter";
   double energyLevel = 6.0;
-  String selectedMood = "愉快";
   String selectedWeather = "晴朗";
-  String selectedTransport = "步行";
+  String selectedTransport = "电动车";
   DateTime selectedDate = DateTime.now();
   List<File> photos = [];
 
   final List<String> availableIcons = [
-    "LocationOn", "Restaurant", "LocalCafe", "Park", "Flight",
-    "Train", "DirectionsBike", "ShoppingBag", "CameraAlt",
+    "LocationOn", "ElectricScooter", "DirectionsBike", "Restaurant", "LocalCafe", "Park",
+    "Flight", "Train", "ShoppingBag", "CameraAlt",
   ];
 
   final List<String> weathers = ["晴朗", "多云", "阴天", "雨", "雪", "风", "雾"];
-  final List<String> transports = ["步行", "骑行", "自驾", "铁路", "航空", "未知"];
-  final List<String> moods = ["愉快", "平静", "兴奋", "疲惫", "失落", "惊喜", "激情", "探索", "放松", "思考"];
+  final List<String> transports = ["电动车", "步行", "骑行", "自驾", "铁路", "航空", "未知"];
 
   @override
   void initState() {
@@ -375,17 +374,17 @@ class _AddFootprintPageState extends State<AddFootprintPage> {
     if (e != null) {
       if (e['icon'] != null && availableIcons.contains(e['icon'])) selectedIcon = e['icon'];
       if (e['energyLevel'] != null) energyLevel = (e['energyLevel'] as num).toDouble();
-      if (e['mood'] != null) selectedMood = moods.contains(e['mood']) ? e['mood'] : "愉快";
       if (e['weather'] != null) selectedWeather = weathers.contains(e['weather']) ? e['weather'] : "晴朗";
       final t = e['transportType'] ?? e['transportMethod'];
       if (t != null) {
         switch(t) {
+          case "EBIKE": selectedTransport = "电动车"; break;
           case "WALK": selectedTransport = "步行"; break;
           case "BIKE": selectedTransport = "骑行"; break;
           case "CAR": selectedTransport = "自驾"; break;
           case "TRAIN": selectedTransport = "铁路"; break;
           case "PLANE": selectedTransport = "航空"; break;
-          default: selectedTransport = transports.contains(t) ? t : "步行";
+          default: selectedTransport = transports.contains(t) ? t : "电动车";
         }
       }
       
@@ -576,7 +575,7 @@ class _AddFootprintPageState extends State<AddFootprintPage> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '地点、心情、照片和故事会一起沉淀成这次足迹的完整样子。',
+                        '地点、路线、里程和照片会一起沉淀成这次出行的完整记录。',
                         style: tt.bodySmall?.copyWith(
                           color: kAtelierMuted,
                           height: 1.5,
@@ -720,10 +719,10 @@ class _AddFootprintPageState extends State<AddFootprintPage> {
           Row(
             children: [
               Expanded(child: DropdownButtonFormField<String>(
-                value: selectedMood,
-                decoration: InputDecoration(labelText: '心情', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-                items: moods.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                onChanged: (v) => setState(() => selectedMood = v!),
+                value: selectedTransport,
+                decoration: InputDecoration(labelText: '出行方式', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                items: transports.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                onChanged: (v) => setState(() => selectedTransport = v!),
               )),
               const SizedBox(width: 12),
               Expanded(child: DropdownButtonFormField<String>(
@@ -732,30 +731,6 @@ class _AddFootprintPageState extends State<AddFootprintPage> {
                 items: weathers.map((w) => DropdownMenuItem(value: w, child: Text(w))).toList(),
                 onChanged: (v) => setState(() => selectedWeather = v!),
               )),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: DropdownButtonFormField<String>(
-                value: selectedTransport,
-                decoration: InputDecoration(labelText: '出行方式', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-                items: transports.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                onChanged: (v) => setState(() => selectedTransport = v!),
-              )),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("活力指数 ${energyLevel.toInt()}", style: tt.bodySmall),
-                    Slider(
-                      value: energyLevel, min: 1, max: 10, divisions: 9,
-                      onChanged: (v) => setState(() => energyLevel = v),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -837,16 +812,13 @@ class _AddFootprintPageState extends State<AddFootprintPage> {
           const SizedBox(height: 32),
           FilledButton(
             onPressed: () async {
-              // Map UI mood to Kotlin/Internal Mood
-              String mappedMood = "RELAXED";
-              if (selectedMood == "激情" || selectedMood == "兴奋" || selectedMood == "惊喜") mappedMood = "EXCITED";
-              else if (selectedMood == "探索") mappedMood = "CURIOUS";
-              else if (selectedMood == "思考" || selectedMood == "疲惫" || selectedMood == "失落") mappedMood = "REFLECTIVE";
-              else mappedMood = "RELAXED";
+              final String mappedMood =
+                  (widget.initialEntry?['mood'] as String?) ?? "RELAXED";
 
               // Map Transport
               String mappedTransport = "UNKNOWN";
               switch(selectedTransport) {
+                case "电动车": mappedTransport = "EBIKE"; break;
                 case "步行": mappedTransport = "WALK"; break;
                 case "骑行": mappedTransport = "BIKE"; break;
                 case "自驾": mappedTransport = "CAR"; break;
@@ -873,6 +845,11 @@ class _AddFootprintPageState extends State<AddFootprintPage> {
                 "transportType": mappedTransport,
                 "latitude": widget.initialEntry?['latitude'],
                 "longitude": widget.initialEntry?['longitude'],
+                "sessionId": widget.initialEntry?['sessionId'],
+                "durationSec": widget.initialEntry?['durationSec'] ?? 0,
+                "avgSpeedKmh": widget.initialEntry?['avgSpeedKmh'] ?? 0.0,
+                "maxSpeedKmh": widget.initialEntry?['maxSpeedKmh'] ?? 0.0,
+                "carbonSavedKg": widget.initialEntry?['carbonSavedKg'] ?? 0.0,
               };
 
               try {
@@ -895,6 +872,8 @@ class _AddFootprintPageState extends State<AddFootprintPage> {
 
   IconData _getIconData(String name) {
     switch (name) {
+      case "ElectricScooter":
+        return Icons.electric_scooter;
       case "Restaurant":
         return Icons.restaurant;
       case "LocalCafe":
@@ -1371,8 +1350,9 @@ class _MainContainerState extends State<MainContainer>
   final List<dynamic> _badgeQueue = [];
   bool _isShowingBadge = false;
 
-  // GlobalKey 用于通知地图页面 tab 切换事件
+  // GlobalKey 用于通知地图页面和总览页面 tab 切换事件
   final GlobalKey<_ExploreMapScreenState> _mapKey = GlobalKey<_ExploreMapScreenState>();
+  final GlobalKey<_DashboardScreenState> _dashboardKey = GlobalKey<_DashboardScreenState>();
 
   // Tab 切换弹性动画
   late AnimationController _tabBounceController;
@@ -1535,6 +1515,17 @@ class _MainContainerState extends State<MainContainer>
     if (index == 1 && prevIndex != 1) {
       _mapKey.currentState?.onTabActivated();
     }
+    // 返回总览页时自动刷新骑行统计与电量续航
+    if (index == 0 && prevIndex != 0) {
+      _dashboardKey.currentState?.refreshFromExternal();
+    }
+  }
+
+  void _startRideFromDashboard() {
+    _onTabTap(1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _mapKey.currentState?.startRideFromExternal();
+    });
   }
 
   @override
@@ -1549,6 +1540,7 @@ class _MainContainerState extends State<MainContainer>
   Widget build(BuildContext context) {
     final pages = [
       DashboardScreen(
+        key: _dashboardKey,
         nickname: widget.nickname,
         avatarId: widget.avatarId,
         themeMode: widget.themeMode,
@@ -1556,8 +1548,13 @@ class _MainContainerState extends State<MainContainer>
         hapticEnabled: widget.hapticEnabled,
         isMaintValid: widget.isMaintValid,
         onSettingsChanged: widget.onSettingsChanged,
+        onStartRide: _startRideFromDashboard,
       ),
-      ExploreMapScreen(key: _mapKey, themeMode: widget.themeMode),
+      ExploreMapScreen(
+        key: _mapKey,
+        themeMode: widget.themeMode,
+        onRideFinished: () => _dashboardKey.currentState?.refreshFromExternal(),
+      ),
       const GoalPlannerPage(),
       ArtStudioScreen(
         nickname: widget.nickname,
@@ -1761,6 +1758,7 @@ class DashboardScreen extends StatefulWidget {
   final bool hapticEnabled;
   final bool isMaintValid;
   final VoidCallback onSettingsChanged;
+  final VoidCallback? onStartRide;
 
   const DashboardScreen({
     super.key,
@@ -1771,6 +1769,7 @@ class DashboardScreen extends StatefulWidget {
     required this.hapticEnabled,
     required this.isMaintValid,
     required this.onSettingsChanged,
+    this.onStartRide,
   });
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -1794,13 +1793,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<dynamic> yearlyGoals = [];
   List<dynamic> _searchResults = const [];
   List<_TimelineMonth> _timelineMonths = const [];
-  Map<String, Color> _heatmapDateColors = const {};
   double totalDistance = 0.0;
   int uniquePlacesLength = 0;
-  double avgEnergy = 0.0;
+  int activeDaysCount = 0;
+  double longestTripKm = 0.0;
+  double totalCarbonSavedKg = 0.0;
   Set<int> _expandedMonths = {};
   String _searchQuery = "";
   final TextEditingController _searchController = TextEditingController();
+
+  // E-Bike riding garage state
+  EbikeConfig _ebikeConfig = const EbikeConfig();
+  double _todayRideKm = 0.0;
+  double _weekRideKm = 0.0;
+  double _monthRideKm = 0.0;
+  double _totalEbikeKm = 0.0;
+  int _ebikeRideCount = 0;
+  bool _isCurrentlyTracking = false;
+
+  void refreshFromExternal() {
+    if (mounted) _loadEntries();
+  }
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -1811,14 +1824,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (hour >= 18 && hour < 23) return "晚安";
     return "深夜了";
   }
-  String dominantMoodStr = "愉快";
 
   final List<String> dailyQuotes = [
-    "每一次相遇都是久别重逢，每一步足迹都是人生印记。",
+    "每一次出发都是新的探索，每一公里都在丈量生活。",
     "走过的路，看过的风景，最终都会成为更好的自己。",
-    "时间沉淀了情绪，留下了故事的余温。",
-    "心之所向，步履以往，世界在脚下延展。",
-    "这世界的辽阔，由你的脚步去丈量。",
+    "迎着风骑行，把城市的大街小巷连成自己的地图。",
+    "心之所向，车轮以往，世界在脚下延展。",
+    "这世界的辽阔，由你的轨迹去丈量。",
     "记忆是一张地图，每个坐标都写着从前。",
     "风带来的气息，是我们曾经路过的证明。"
   ];
@@ -1833,38 +1845,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  String _mapMoodToChinese(String englishMood) {
-    if (englishMood.contains(RegExp(r'[\u4e00-\u9fa5]'))) return englishMood;
-    switch (englishMood.toUpperCase()) {
-      case "EXCITED": return "激情";
-      case "CURIOUS": return "探索";
-      case "RELAXED": return "放松";
-      case "REFLECTIVE": return "思考";
-      case "HAPPY": return "愉快";
-      case "CALM": return "平静";
-      default: return englishMood;
-    }
-  }
-
-  Color _moodColor(String mood, ColorScheme cs) {
-    switch (_mapMoodToChinese(mood)) {
-      case "激情":
-        return Colors.orange;
-      case "探索":
-        return Colors.teal;
-      case "放松":
-        return Colors.blue;
-      case "思考":
-        return Colors.purple;
-      case "愉快":
-        return Colors.amber;
-      case "平静":
-        return Colors.lightBlue;
-      default:
-        return cs.primary;
-    }
   }
 
   List<dynamic> _buildSearchResults(List<dynamic> entries, String query) {
@@ -1882,7 +1862,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final jsonStr = await channel.invokeMethod<String>('getAllEntries');
       final goalsJsonStr = await channel.invokeMethod<String>('getAllGoals');
-      
+
+      EbikeConfig loadedEbikeConfig = _ebikeConfig;
+      bool trackingNow = false;
+      try {
+        final ebikeJson = await channel.invokeMethod<String>('getEbikeConfig');
+        if (ebikeJson != null) {
+          loadedEbikeConfig = EbikeConfig.fromJson(jsonDecode(ebikeJson));
+        }
+        final trackStateJson = await channel.invokeMethod<String>('getTrackingState');
+        if (trackStateJson != null) {
+          trackingNow = jsonDecode(trackStateJson)['isTracking'] == true;
+        }
+      } catch (_) {}
+
       List<dynamic> yGoals = [];
       if (goalsJsonStr != null) {
         final List<dynamic> allGoals = jsonDecode(goalsJsonStr);
@@ -1901,8 +1894,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (!mounted) return;
         final List<dynamic> entries = jsonDecode(jsonStr);
         final today = DateTime.now();
+        final todayOnly = DateTime(today.year, today.month, today.day);
+        final weekStart = todayOnly.subtract(Duration(days: todayOnly.weekday - 1));
+        final monthStart = DateTime(today.year, today.month, 1);
+
+        double todayKm = 0.0;
+        double weekKm = 0.0;
+        double monthKm = 0.0;
+        double totalEbike = 0.0;
+        int ebikeCount = 0;
+
+        for (final e in entries) {
+          final t = (e['transportType'] ?? '').toString().toUpperCase();
+          final tags = (e['tags'] as List?)?.map((x) => x.toString()).toList() ?? const <String>[];
+          final isRide = t == 'EBIKE' || t == 'BIKE' || tags.contains('电动车') || tags.contains('骑行轨迹');
+          final dKm = (e['distanceKm'] as num?)?.toDouble() ?? 0.0;
+          if (isRide) {
+            totalEbike += dKm;
+            ebikeCount++;
+          }
+          final dateStr = e['happenedOn'] as String?;
+          if (isRide && dateStr != null && dateStr.length >= 10) {
+            try {
+              final dt = DateTime.parse(dateStr.substring(0, 10));
+              if (!dt.isBefore(todayOnly)) todayKm += dKm;
+              if (!dt.isBefore(weekStart)) weekKm += dKm;
+              if (!dt.isBefore(monthStart)) monthKm += dKm;
+            } catch (_) {}
+          }
+        }
+
         List<dynamic> onThisDay = [];
-        final colorScheme = Theme.of(context).colorScheme;
 
         final yearEntries = entries.where((e) {
           final dateStr = e['happenedOn'] as String?;
@@ -1927,34 +1949,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
 
         double dist = 0.0;
-        double energySum = 0.0;
+        double longest = 0.0;
+        double carbonSum = 0.0;
         final places = <String>{};
-        final moodCounts = <String, int>{};
+        final activeDays = <String>{};
 
         for (var e in yearEntries) {
-          dist += (e['distanceKm'] as num?)?.toDouble() ?? 0.0;
+          final dKm = (e['distanceKm'] as num?)?.toDouble() ?? 0.0;
+          dist += dKm;
+          if (dKm > longest) longest = dKm;
+          final cKg = (e['carbonSavedKg'] as num?)?.toDouble() ??
+              (e['carbonSaved'] as num?)?.toDouble() ??
+              0.0;
+          carbonSum += cKg > 0 ? cKg : (dKm * 0.14);
           final String? loc = e['location'];
           if (loc != null && loc.isNotEmpty) places.add(loc);
-          energySum += (e['energyLevel'] as num?)?.toDouble() ?? 0.0;
-          final String? mood = e['mood'];
-          if (mood != null && mood.isNotEmpty) moodCounts[mood] = (moodCounts[mood] ?? 0) + 1;
-        }
-
-        String topMood = "未知";
-        int topMoodCount = -1;
-        moodCounts.forEach((k, v) {
-          if (v > topMoodCount) {
-             topMoodCount = v;
-             topMood = k;
-          }
-        });
-
-        final heatmapDateColors = <String, Color>{};
-        for (final entry in yearEntries) {
-          final dateStr = entry['happenedOn'] as String?;
-          final moodStr = entry['mood'] as String?;
-          if (dateStr != null && dateStr.length >= 10 && moodStr != null) {
-            heatmapDateColors[dateStr.substring(0, 10)] = _moodColor(moodStr, colorScheme);
+          final dateStr = e['happenedOn'] as String?;
+          if (dateStr != null && dateStr.length >= 10) {
+            activeDays.add(dateStr.substring(0, 10));
           }
         }
 
@@ -1978,18 +1990,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
           allEntries = yearEntries;
           onThisDayEntries = onThisDay;
           yearlyGoals = yGoals;
-          _heatmapDateColors = heatmapDateColors;
           _timelineMonths = timelineMonths;
           _searchResults = searchResults;
           totalDistance = dist;
           uniquePlacesLength = places.length;
-          avgEnergy = yearEntries.isNotEmpty ? energySum / yearEntries.length : 0.0;
-          if (topMoodCount > 0) dominantMoodStr = _mapMoodToChinese(topMood);
+          activeDaysCount = activeDays.length;
+          longestTripKm = longest;
+          totalCarbonSavedKg = carbonSum;
+          _ebikeConfig = loadedEbikeConfig;
+          _todayRideKm = todayKm;
+          _weekRideKm = weekKm;
+          _monthRideKm = monthKm;
+          _totalEbikeKm = totalEbike;
+          _ebikeRideCount = ebikeCount;
+          _isCurrentlyTracking = trackingNow;
         });
       }
     } catch (e) {
       debugPrint("Error loading entries: $e");
     }
+  }
+
+  Future<void> _handleResetCharge() async {
+    const channel = MethodChannel('com.footprint/data');
+    try {
+      await channel.invokeMethod('resetEbikeCharge');
+      if (widget.hapticEnabled) HapticFeedback.mediumImpact();
+      await _loadEntries();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已重置充电里程 · 预估满电续航 ${_ebikeConfig.fullRangeKm.round()} km'),
+            backgroundColor: const Color(0xFF00A86B),
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _handleOpenEbikeSettings() async {
+    final updated = await showEbikeConfigSheet(context, _ebikeConfig);
+    if (updated == null) return;
+    const channel = MethodChannel('com.footprint/data');
+    try {
+      await channel.invokeMethod('saveEbikeConfig', {
+        'ebikeName': updated.ebikeName,
+        'fullRangeKm': updated.fullRangeKm,
+        'sinceChargeKm': updated.sinceChargeKm,
+        'autoPauseEnabled': updated.autoPauseEnabled,
+        'keepScreenOn': updated.keepScreenOn,
+        'bluetoothAutoTrackEnabled': updated.bluetoothAutoTrackEnabled,
+        'bluetoothAutoStopEnabled': updated.bluetoothAutoStopEnabled,
+        'bluetoothDeviceAddress': updated.bluetoothDeviceAddress,
+        'bluetoothDeviceName': updated.bluetoothDeviceName,
+        'voiceAnnounceEnabled': updated.voiceAnnounceEnabled,
+        'voiceAnnounceIntervalKm': updated.voiceAnnounceIntervalKm,
+        'voiceLowBatteryAlertEnabled': updated.voiceLowBatteryAlertEnabled,
+      });
+      await _loadEntries();
+    } catch (_) {}
   }
 
   IconData _getAvatarIcon(String id) {
@@ -2086,19 +2145,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                trailing: Row(mainAxisSize: MainAxisSize.min, children: List.generate(5, (i) => Icon(i < energy ? Icons.star : Icons.star_border, size: 14, color: i < energy ? Colors.amber : cs.outline))),
                                onTap: () { Navigator.pop(context); _showDetail(entry); },
                              );
-                           case 'mood':
-                             final mood = _mapMoodToChinese(entry['mood'] ?? '');
-                             return ListTile(
-                               leading: Icon(Icons.mood, color: cs.tertiary),
-                               title: Text(entry['title'] ?? '未知足迹'),
-                               subtitle: Text(eDate),
-                               trailing: Container(
-                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                 decoration: BoxDecoration(color: cs.tertiaryContainer, borderRadius: BorderRadius.circular(8)),
-                                 child: Text(mood, style: TextStyle(color: cs.onTertiaryContainer, fontWeight: FontWeight.bold, fontSize: 12)),
-                               ),
-                               onTap: () { Navigator.pop(context); _showDetail(entry); },
-                             );
                            default:
                              return ListTile(
                                leading: Icon(Icons.place, color: cs.primary),
@@ -2181,6 +2227,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
               right: 16,
             ),
             children: [
+              EbikeGarageCard(
+                config: _ebikeConfig,
+                todayKm: _todayRideKm,
+                weekKm: _weekRideKm,
+                monthKm: _monthRideKm,
+                totalEbikeKm: _totalEbikeKm,
+                ebikeRideCount: _ebikeRideCount,
+                isCurrentlyTracking: _isCurrentlyTracking,
+                onStartRide: () => widget.onStartRide?.call(),
+                onResetCharge: _handleResetCharge,
+                onOpenSettings: _handleOpenEbikeSettings,
+                onOpenKeepAliveCheck: () => showBackgroundKeepAliveDialog(context),
+              ),
+              const SizedBox(height: 18),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -2238,47 +2298,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      _sBox(cs, tt, "记录", "${allEntries.length}", onTap: () => _showStatDetail(context, "记录条数 (${allEntries.length})", "footprint", allEntries)),
+                      _sBox(cs, tt, "活跃天", "$activeDaysCount", u: "天", onTap: () => _showStatDetail(context, "本年出行记录 (${allEntries.length})", "footprint", allEntries)),
                       const SizedBox(width: 8),
-                      _sBox(cs, tt, "活力", avgEnergy.toStringAsFixed(1), u: "指数", onTap: () {
-                        final sorted = List.of(allEntries)..sort((a,b) => ((b['energyLevel'] as num?)?.toDouble() ?? 0.0).compareTo((a['energyLevel'] as num?)?.toDouble() ?? 0.0));
-                        _showStatDetail(context, "平均活力指数 (${avgEnergy.toStringAsFixed(1)})", "energy", sorted);
+                      _sBox(cs, tt, "单次最长", longestTripKm.toStringAsFixed(1), u: "km", onTap: () {
+                        final sorted = List.of(allEntries)..sort((a,b) => ((b['distanceKm'] as num?)?.toDouble() ?? 0.0).compareTo((a['distanceKm'] as num?)?.toDouble() ?? 0.0));
+                        _showStatDetail(context, "单次里程排行", "distance", sorted);
                       }),
                       const SizedBox(width: 8),
-                      _sBox(cs, tt, "主情绪", dominantMoodStr, onTap: () {
-                         final filtered = allEntries.where((e) => e['mood'] == dominantMoodStr).toList();
-                         _showStatDetail(context, "主导心情 ($dominantMoodStr)", "mood", filtered);
+                      _sBox(cs, tt, "绿色减碳", totalCarbonSavedKg.toStringAsFixed(1), u: "kg", onTap: () {
+                        final sorted = List.of(allEntries)..sort((a,b) => ((b['distanceKm'] as num?)?.toDouble() ?? 0.0).compareTo((a['distanceKm'] as num?)?.toDouble() ?? 0.0));
+                        _showStatDetail(context, "年度减碳贡献 (${totalCarbonSavedKg.toStringAsFixed(1)} kg)", "distance", sorted);
                       }),
                     ],
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: cs.outlineVariant)),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Icon(Icons.grid_view, color: cs.primary, size: 16),
-                      const SizedBox(width: 6),
-                      Text("情绪热力图", style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold, fontSize: 13)),
-                      const Spacer(),
-                      Text("$currentYear", style: TextStyle(color: cs.outline, fontSize: 11)),
-                    ]),
-                    const SizedBox(height: 8),
-                    _buildMoodHeatmap(cs),
-                    const SizedBox(height: 6),
-                    Wrap(spacing: 10, runSpacing: 4, children: [
-                      _heatLegend("激情", Colors.orange, cs), _heatLegend("探索", Colors.teal, cs),
-                      _heatLegend("放松", Colors.blue, cs), _heatLegend("思考", Colors.purple, cs),
-                      _heatLegend("愉快", Colors.amber, cs), _heatLegend("平静", Colors.lightBlue, cs),
-                    ]),
-                  ]),
-                ),
-              ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               Card(
                 elevation: 0,
                  shape: RoundedRectangleBorder(
@@ -2322,6 +2357,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                        ...onThisDayEntries.map((e) {
                          int pastYear = int.tryParse(e['happenedOn']?.toString().split('-')[0] ?? '0') ?? 0;
                          String yearDiff = (DateTime.now().year - pastYear).toString();
+                         final eDist = (e['distanceKm'] as num?)?.toDouble() ?? 0.0;
                          return Padding(
                            padding: const EdgeInsets.only(bottom: 12),
                            child: InkWell(
@@ -2336,9 +2372,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                      borderRadius: BorderRadius.circular(12),
                                    ),
                                    child: const Icon(
-                                     Icons.landscape,
+                                     Icons.route,
                                      color: Colors.orange,
-                                     size: 32,
+                                     size: 30,
                                    ),
                                  ),
                                  const SizedBox(width: 16),
@@ -2354,7 +2390,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                          ),
                                        ),
                                        Text(
-                                         '${yearDiff}年前 · ${_mapMoodToChinese(e['mood'] ?? '')}',
+                                         '$yearDiff年前 · ${eDist.toStringAsFixed(1)} km',
                                          style: TextStyle(
                                            color: cs.outline,
                                            fontSize: 12,
@@ -2658,84 +2694,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       );
 
-  Widget _heatLegend(String label, Color color, ColorScheme cs) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(width: 8, height: 8, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
-      const SizedBox(width: 4),
-      Text(label, style: TextStyle(fontSize: 10, color: cs.outline)),
-    ],
-  );
-
-  Widget _buildMoodHeatmap(ColorScheme cs) {
-    // Generate dates for the current year
-    final now = DateTime.now();
-    final year = currentYear;
-    final firstDay = DateTime(year, 1, 1);
-    final daysInYear = DateTime(year + 1, 1, 1).difference(firstDay).inDays;
-
-    // Determine grid dimensions
-    final firstWeekday = (firstDay.weekday) % 7; // 0 for Sunday
-    const int rows = 7;
-    final int cols = ((daysInYear + firstWeekday) / 7).ceil();
-
-    return LayoutBuilder(builder: (context, constraints) {
-      final cellSize = math.max(4.0, (constraints.maxWidth - (cols - 1) * 2) / cols);
-      
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Month labels
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(12, (i) => Text('${i+1}月', style: TextStyle(fontSize: 10, color: cs.outline))),
-          ),
-          const SizedBox(height: 4),
-          // Heatmap grid
-          RepaintBoundary(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: List.generate(cols, (colIndex) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 2),
-                    child: Column(
-                      children: List.generate(rows, (rowIndex) {
-                        final dayIndex = colIndex * rows + rowIndex - firstWeekday;
-                        if (dayIndex < 0 || dayIndex >= daysInYear) {
-                           return Container(width: cellSize, height: cellSize, margin: const EdgeInsets.only(bottom: 2));
-                        }
-                        
-                        final date = firstDay.add(Duration(days: dayIndex));
-                        if (date.year > year || (year == now.year && date.isAfter(now))) {
-                           return Container(width: cellSize, height: cellSize, margin: const EdgeInsets.only(bottom: 2));
-                        }
-                        
-                        final dateKey = "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
-                        final color = _heatmapDateColors[dateKey] ?? cs.surfaceContainerHighest.withValues(alpha: 0.5);
-                        
-                        return Container(
-                          width: cellSize,
-                          height: cellSize,
-                          margin: const EdgeInsets.only(bottom: 2),
-                          decoration: BoxDecoration(
-                            color: color,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        );
-                      }),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
-        ],
-      );
-    });
-  }
-  
   // Custom timeline renderer grouping by month
   List<Widget> _buildTimeline(ColorScheme cs) {
     if (_timelineMonths.isEmpty) {
@@ -2798,8 +2756,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       }
 
                       final iconStr = entry['icon'] as String? ?? '';
-                      IconData iconData = Icons.location_on;
+                      final transportStr = (entry['transportType'] ?? '').toString();
+                      IconData iconData = transportStr == 'EBIKE'
+                          ? Icons.electric_scooter
+                          : Icons.location_on;
                       switch (iconStr) {
+                        case "ElectricScooter":
+                          iconData = Icons.electric_scooter;
+                          break;
+                        case "DirectionsCar":
+                          iconData = Icons.directions_car;
+                          break;
+                        case "RunCircle":
+                          iconData = Icons.directions_walk;
+                          break;
                         case "Restaurant":
                           iconData = Icons.restaurant;
                           break;
@@ -3170,26 +3140,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// --- 探索地图页 (ExploreMapScreen) - 1:1 复刻原生功能 ---
+// --- 探索地图页 (ExploreMapScreen) - 电动车骑行与足迹探索 ---
 class ExploreMapScreen extends StatefulWidget {
   final String themeMode;
-  const ExploreMapScreen({super.key, required this.themeMode});
+  final VoidCallback? onRideFinished;
+  const ExploreMapScreen({
+    super.key,
+    required this.themeMode,
+    this.onRideFinished,
+  });
   @override
   State<ExploreMapScreen> createState() => _ExploreMapScreenState();
-}
-
-class _TrackingOverlayData {
-  final double totalDistanceMeters;
-  final int pointCount;
-  final double? lat;
-  final double? lng;
-
-  const _TrackingOverlayData({
-    this.totalDistanceMeters = 0.0,
-    this.pointCount = 0,
-    this.lat,
-    this.lng,
-  });
 }
 
 class _ExploreMapScreenState extends State<ExploreMapScreen>
@@ -3207,7 +3168,7 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   int? _lastNativeCapsulesHash;
   int? _lastNativeFogHash;
 
-  // Flutter 高德定位客户端 (仅供单击定位使用)
+  // Flutter 高德定位客户端 (仅供单击定位兜底使用)
   final AMapFlutterLocation _locationClient = AMapFlutterLocation();
   StreamSubscription<Map<String, Object>>? _locationSubscription;
   StreamSubscription? _streamSubscription;
@@ -3217,37 +3178,35 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   bool _isMapActive = true;    // 当前是否在地图 tab
   bool _userRequestedLocation = false; // 是否手动点击了定位
 
-  // === 追踪状态 (Flutter 实现，匹配原 Kotlin LocationTrackingService) ===
+  // === 骑行追踪状态 ===
   bool _isTracking = false;
   bool _isPaused = false;
+  bool _isAutoPaused = false;
+  bool _isFullScreenHud = false;
+  bool _keepScreenOn = true;
+  bool _followCamera = true;
+  String _selectedTransport = 'EBIKE';
+  EbikeConfig _ebikeConfig = const EbikeConfig();
+
   final List<Map<String, double>> _trackingPath = [];
   double _totalDistance = 0.0;
   int _sessionStartTime = 0;
   int _lastKnownDurationMs = 0;
   double? _lastLat;
   double? _lastLng;
-  int? _lastPointTime;
-  int _lastSaveTime = 0;
-  String _lastAddress = '';
   List<dynamic> _capsules = [];
-  double? _lastAltitude;
   bool _batteryOptimizationPromptShown = false;
   Timer? _durationTimer;
   final ValueNotifier<String> _durationNotifier = ValueNotifier<String>('00:00:00');
-  final ValueNotifier<_TrackingOverlayData> _trackingOverlayNotifier =
-      ValueNotifier(const _TrackingOverlayData());
-
-  // 匹配原 Kotlin 服务的过滤阈值
-  static const double _maxSpeedMs = 50.0;
-  static const double _minDistanceM = 0.5;
-  static const double _minValidLatLng = 0.1;
-  static const int _saveIntervalMs = 2000;
+  final ValueNotifier<RidingTelemetry> _telemetryNotifier =
+      ValueNotifier(const RidingTelemetry());
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadEntries();
+    _loadEbikeConfig();
     // 初始化高德隐私合规（不自动开启定位）
     AMapFlutterLocation.updatePrivacyShow(true, true);
     AMapFlutterLocation.updatePrivacyAgree(true);
@@ -3259,56 +3218,136 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
       if (!mounted) return;
       try {
         final data = jsonDecode(event as String);
-        if (data['type'] == 'status') {
+        final type = data['type'];
+        if (type == 'status') {
+          final nextTracking = data['isTracking'] == true;
+          final nextPaused = data['isPaused'] == true;
+          final nextAutoPaused = data['isAutoPaused'] == true;
+          final nextTransport =
+              (data['transportType'] as String?) ?? _selectedTransport;
+
           setState(() {
-            _isTracking = data['isTracking'];
-            _isPaused = data['isPaused'] ?? false;
-            
-            // 如果 native 传回了持续时间，我们优先用它来校准 sessionStartTime
+            _isTracking = nextTracking;
+            _isPaused = nextPaused;
+            _isAutoPaused = nextAutoPaused;
+            _selectedTransport = nextTransport;
+
             if (data['durationMs'] != null && _isTracking) {
               _lastKnownDurationMs = (data['durationMs'] as num).toInt();
-              _sessionStartTime = DateTime.now().millisecondsSinceEpoch - _lastKnownDurationMs;
+              _sessionStartTime =
+                  DateTime.now().millisecondsSinceEpoch - _lastKnownDurationMs;
+              _durationNotifier.value = _formatDuration(_lastKnownDurationMs);
             }
 
             _updateNativeLocationState();
             _updateNativeMap();
             if (!_isTracking) {
+              _isFullScreenHud = false;
               _durationNotifier.value = '00:00:00';
-              _trackingOverlayNotifier.value = const _TrackingOverlayData();
+              _telemetryNotifier.value = const RidingTelemetry();
               _durationTimer?.cancel();
-            } else if (_durationTimer == null || !_durationTimer!.isActive) {
-               _startDurationTimer();
+              _applyKeepScreenOn(false);
+              _mapChannel?.invokeMethod('setFollowLocation', false);
+            } else {
+              _telemetryNotifier.value = _telemetryNotifier.value.copyWith(
+                isPaused: _isPaused,
+                isAutoPaused: _isAutoPaused,
+                transportType: _selectedTransport,
+              );
+              if (_durationTimer == null || !_durationTimer!.isActive) {
+                _startDurationTimer();
+              }
             }
           });
-        } else if (data['type'] == 'location') {
+        } else if (type == 'location') {
           if (_isTracking && data['data'] != null) {
-            final lat = (data['data']['latitude'] as num).toDouble();
-            final lng = (data['data']['longitude'] as num).toDouble();
-
+            final d = data['data'] as Map<String, dynamic>;
+            final lat = (d['latitude'] as num).toDouble();
+            final lng = (d['longitude'] as num).toDouble();
             _lastLat = lat;
             _lastLng = lng;
-            _trackingPath.add({'latitude': lat, 'longitude': lng});
-            _updateTrackingOverlay(
-              totalDistanceMeters: _totalDistance,
-              pointCount: _trackingPath.length,
+            _telemetryNotifier.value = _telemetryNotifier.value.copyWith(
               lat: lat,
               lng: lng,
+              accuracyMeters: (d['accuracy'] as num?)?.toDouble() ??
+                  _telemetryNotifier.value.accuracyMeters,
+              speedKmh: (d['speedKmh'] as num?)?.toDouble() ??
+                  _telemetryNotifier.value.speedKmh,
+              avgSpeedKmh: (d['avgSpeedKmh'] as num?)?.toDouble() ??
+                  _telemetryNotifier.value.avgSpeedKmh,
+              maxSpeedKmh: (d['maxSpeedKmh'] as num?)?.toDouble() ??
+                  _telemetryNotifier.value.maxSpeedKmh,
+              pointCount: (d['pointCount'] as num?)?.toInt() ??
+                  _telemetryNotifier.value.pointCount,
+              address: (d['address'] as String?)?.isNotEmpty == true
+                  ? d['address'] as String
+                  : _telemetryNotifier.value.address,
             );
-            _mapChannel?.invokeMethod('setTrackingPath', _trackingPath);
           }
-        } else if (data['type'] == 'distance') {
-           _totalDistance = (data['distance'] as num).toDouble();
-           _updateTrackingOverlay(
-             totalDistanceMeters: _totalDistance,
-             pointCount: _trackingPath.length,
-             lat: _lastLat,
-             lng: _lastLng,
-           );
+        } else if (type == 'distance') {
+          _totalDistance = (data['distance'] as num).toDouble();
+          _telemetryNotifier.value = _telemetryNotifier.value.copyWith(
+            totalDistanceMeters: _totalDistance,
+            avgSpeedKmh: (data['avgSpeedKmh'] as num?)?.toDouble() ??
+                _telemetryNotifier.value.avgSpeedKmh,
+            maxSpeedKmh: (data['maxSpeedKmh'] as num?)?.toDouble() ??
+                _telemetryNotifier.value.maxSpeedKmh,
+            pointCount: (data['pointCount'] as num?)?.toInt() ??
+                _telemetryNotifier.value.pointCount,
+          );
+        } else if (type == 'telemetry') {
+          if (_isTracking) {
+            _telemetryNotifier.value = _telemetryNotifier.value.copyWith(
+              speedKmh: (data['speedKmh'] as num?)?.toDouble() ?? 0.0,
+              avgSpeedKmh: (data['avgSpeedKmh'] as num?)?.toDouble() ??
+                  _telemetryNotifier.value.avgSpeedKmh,
+              maxSpeedKmh: (data['maxSpeedKmh'] as num?)?.toDouble() ??
+                  _telemetryNotifier.value.maxSpeedKmh,
+              accuracyMeters: (data['accuracy'] as num?)?.toDouble() ??
+                  _telemetryNotifier.value.accuracyMeters,
+              isAutoPaused: data['isAutoPaused'] == true,
+              pointCount: (data['pointCount'] as num?)?.toInt() ??
+                  _telemetryNotifier.value.pointCount,
+            );
+          }
         }
       } catch (e) {
         debugPrint('Stream Error: $e');
       }
     });
+  }
+
+  Future<void> _loadEbikeConfig() async {
+    try {
+      final cfgStr = await dataChannel.invokeMethod<String>('getEbikeConfig');
+      if (cfgStr != null && mounted) {
+        final cfg = EbikeConfig.fromJson(jsonDecode(cfgStr));
+        setState(() {
+          _ebikeConfig = cfg;
+          if (!_isTracking) {
+            _selectedTransport = cfg.defaultTransport;
+            _keepScreenOn = cfg.keepScreenOn;
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _applyKeepScreenOn(bool enabled) async {
+    try {
+      await dataChannel.invokeMethod('setKeepScreenOn', enabled);
+    } catch (_) {}
+  }
+
+  /// 从首页「一键开始电动车骑行」按钮调用
+  void startRideFromExternal() {
+    if (!mounted) return;
+    if (_isTracking) {
+      setState(() => _isFullScreenHud = true);
+    } else {
+      setState(() => _selectedTransport = 'EBIKE');
+      _startTracking();
+    }
   }
 
   Future<void> _initApiKey() async {
@@ -3330,28 +3369,45 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
       final json = await dataChannel.invokeMethod('getTrackingState');
       final state = jsonDecode(json);
       if (state['isTracking'] == true) {
+        final transport = (state['transportType'] as String?) ?? 'EBIKE';
         setState(() {
           _isTracking = true;
           _isPaused = state['isPaused'] == true;
+          _isAutoPaused = state['isAutoPaused'] == true;
+          _selectedTransport = transport;
           _totalDistance = (state['totalDistance'] as num).toDouble();
           _lastKnownDurationMs = (state['totalDurationMs'] as num).toInt();
-          _sessionStartTime = DateTime.now().millisecondsSinceEpoch - _lastKnownDurationMs;
+          _sessionStartTime =
+              DateTime.now().millisecondsSinceEpoch - _lastKnownDurationMs;
           _trackingPath.clear();
           for (var p in state['path']) {
-            _trackingPath.add({'latitude': p['latitude'], 'longitude': p['longitude']});
+            _trackingPath.add({
+              'latitude': (p['latitude'] as num).toDouble(),
+              'longitude': (p['longitude'] as num).toDouble(),
+            });
           }
         });
         final lastPoint = _trackingPath.isNotEmpty ? _trackingPath.last : null;
         _lastLat = lastPoint?['latitude'];
         _lastLng = lastPoint?['longitude'];
-        _updateTrackingOverlay(
+        _durationNotifier.value = _formatDuration(_lastKnownDurationMs);
+        _telemetryNotifier.value = RidingTelemetry(
           totalDistanceMeters: _totalDistance,
-          pointCount: _trackingPath.length,
+          pointCount: (state['pointCount'] as num?)?.toInt() ?? _trackingPath.length,
+          speedKmh: (state['currentSpeedKmh'] as num?)?.toDouble() ?? 0.0,
+          avgSpeedKmh: (state['avgSpeedKmh'] as num?)?.toDouble() ?? 0.0,
+          maxSpeedKmh: (state['maxSpeedKmh'] as num?)?.toDouble() ?? 0.0,
+          accuracyMeters: (state['accuracy'] as num?)?.toDouble() ?? 0.0,
+          isPaused: _isPaused,
+          isAutoPaused: _isAutoPaused,
+          transportType: transport,
+          address: (state['address'] as String?) ?? '',
           lat: _lastLat,
           lng: _lastLng,
         );
         _startDurationTimer();
-        _mapChannel?.invokeMethod('setTrackingPath', _trackingPath);
+        _applyKeepScreenOn(_keepScreenOn);
+        _mapChannel?.invokeMethod('setFollowLocation', _followCamera);
         _updateNativeMap();
       }
     } catch (e) {
@@ -3362,16 +3418,14 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   void _startDurationTimer() {
     _durationTimer?.cancel();
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted || !_isTracking || _isPaused) return;
-      
+      if (!mounted || !_isTracking || _isPaused || _isAutoPaused) return;
+
       int now = DateTime.now().millisecondsSinceEpoch;
       late final String nextDuration;
-      // 核心修复：如果 _sessionStartTime 为 0 或异常，直接使用 _lastKnownDurationMs
-      if (_sessionStartTime <= 1000000) { // 甚至没到 1970-01-01 00:16
+      if (_sessionStartTime <= 1000000) {
         nextDuration = _formatDuration(_lastKnownDurationMs);
       } else {
         int elapsed = now - _sessionStartTime;
-        // 这里的 1000 小时是一个合理的上限检查，超过此值认为计算溢出（通常是因为 startTime 错误）
         if (elapsed > 3600000 * 1000 || elapsed < 0) {
           elapsed = _lastKnownDurationMs;
         }
@@ -3384,62 +3438,31 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
     });
   }
 
-  void _updateTrackingOverlay({
-    required double totalDistanceMeters,
-    required int pointCount,
-    double? lat,
-    double? lng,
-  }) {
-    final current = _trackingOverlayNotifier.value;
-    final sameDistance =
-        (current.totalDistanceMeters - totalDistanceMeters).abs() < 0.01;
-    final samePointCount = current.pointCount == pointCount;
-    final sameLat = (current.lat == null && lat == null) ||
-        (current.lat != null &&
-            lat != null &&
-            (current.lat! - lat).abs() < 0.000001);
-    final sameLng = (current.lng == null && lng == null) ||
-        (current.lng != null &&
-            lng != null &&
-            (current.lng! - lng).abs() < 0.000001);
-    if (sameDistance && samePointCount && sameLat && sameLng) {
-      return;
-    }
-    _trackingOverlayNotifier.value = _TrackingOverlayData(
-      totalDistanceMeters: totalDistanceMeters,
-      pointCount: pointCount,
-      lat: lat,
-      lng: lng,
-    );
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _applyKeepScreenOn(false);
     _locationSubscription?.cancel();
     _streamSubscription?.cancel();
     _locationClient.destroy();
     _durationTimer?.cancel();
     _durationNotifier.dispose();
-    _trackingOverlayNotifier.dispose();
+    _telemetryNotifier.dispose();
     super.dispose();
   }
 
-  // === 应用生命周期管理：后台时停止定位（除非正在记录足迹）===
+  // === 应用生命周期管理：后台时停止地图蓝点定位（追踪由原生 ForegroundService 独立负责）===
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      // 应用进入后台，如果没有在记录足迹，停止定位
       _stopLocationIfIdle();
-      // 通知原生地图也关闭一直定位
       _mapChannel?.invokeMethod('setLocationEnabled', false);
     } else if (state == AppLifecycleState.resumed) {
-      // 应用回到前台，如果在地图页且正在追踪，确保事实定位运行
-      if (_isMapActive && _isTracking) {
-        _locationClient.startLocation();
-      }
       _updateNativeLocationState();
+      if (_isTracking) {
+        _recoverTrackingState();
+      }
     }
   }
 
@@ -3453,11 +3476,8 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   /// Tab 切换进入地图页时调用
   void onTabActivated() {
     _isMapActive = true;
+    _loadEbikeConfig();
     _updateNativeLocationState();
-    // 如果正在追踪，确保定位活跃
-    if (_isTracking) {
-      _locationClient.startLocation();
-    }
   }
 
   /// 在非追踪/非定位时停止定位服务
@@ -3761,7 +3781,11 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   Future<void> _startTracking() async {
     final status = await Permission.locationWhenInUse.request();
     if (!status.isGranted) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("需要位置权限才能记录足迹"), backgroundColor: Colors.orange));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("需要位置权限才能记录骑行轨迹"), backgroundColor: Colors.orange),
+        );
+      }
       return;
     }
     final alwaysStatus = await Permission.locationAlways.status;
@@ -3770,51 +3794,71 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
       if (!requestedAlways.isGranted && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text("建议授予“始终允许”位置权限，后台记录会更稳定"),
+            content: const Text("建议授予“始终允许”位置权限，息屏骑行轨迹更完整"),
             backgroundColor: Colors.orange,
-            action: SnackBarAction(label: "去设置", textColor: Colors.white, onPressed: () => openAppSettings()),
+            action: SnackBarAction(
+              label: "去设置",
+              textColor: Colors.white,
+              onPressed: () => openAppSettings(),
+            ),
           ),
         );
       }
     }
     try {
-      final ignoringBattery = await dataChannel.invokeMethod('isIgnoringBatteryOptimizations') == true;
+      final ignoringBattery =
+          await dataChannel.invokeMethod('isIgnoringBatteryOptimizations') == true;
       if (!ignoringBattery && !_batteryOptimizationPromptShown) {
         _batteryOptimizationPromptShown = true;
         await dataChannel.invokeMethod('requestBatteryOptimizationExemption');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("建议允许后台电池保护例外，长时间记录不易中断"), duration: Duration(seconds: 3)),
+            const SnackBar(
+              content: Text("建议允许后台电池白名单，长时间骑行不易中断"),
+              duration: Duration(seconds: 3),
+            ),
           );
         }
       }
     } catch (_) {}
+
     setState(() {
       _trackingPath.clear();
       _totalDistance = 0.0;
       _lastLat = null;
       _lastLng = null;
+      _isAutoPaused = false;
+      _followCamera = true;
+      _keepScreenOn = _ebikeConfig.keepScreenOn;
       _sessionStartTime = DateTime.now().millisecondsSinceEpoch;
     });
     _durationNotifier.value = '00:00:00';
-    _trackingOverlayNotifier.value = const _TrackingOverlayData();
+    _telemetryNotifier.value = RidingTelemetry(transportType: _selectedTransport);
 
     try {
-      await _mapChannel?.invokeMethod('centerLocation', {'zoom': 18.0});
+      await _mapChannel?.invokeMethod('centerLocation', {'zoom': 17.5});
+      await _mapChannel?.invokeMethod('setFollowLocation', _followCamera);
     } catch (_) {}
 
     try {
-      await dataChannel.invokeMethod('startTracking');
+      await dataChannel.invokeMethod('startTracking', {
+        'transportType': _selectedTransport,
+      });
+      await _applyKeepScreenOn(_keepScreenOn);
       setState(() {
         _isTracking = true;
         _isPaused = false;
+        _isAutoPaused = false;
         _lastKnownDurationMs = 0;
         _sessionStartTime = DateTime.now().millisecondsSinceEpoch;
       });
-
       _startDurationTimer();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("启动追踪失败: $e"), backgroundColor: Colors.orange));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("启动追踪失败: $e"), backgroundColor: Colors.orange),
+        );
+      }
     }
   }
 
@@ -3825,9 +3869,15 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
       final json = await dataChannel.invokeMethod('getTrackingState');
       final state = jsonDecode(json);
       setState(() {
-         _isPaused = true;
-         _lastKnownDurationMs = (state['totalDurationMs'] as num).toInt();
+        _isPaused = true;
+        _isAutoPaused = false;
+        _lastKnownDurationMs = (state['totalDurationMs'] as num).toInt();
       });
+      _telemetryNotifier.value = _telemetryNotifier.value.copyWith(
+        isPaused: true,
+        isAutoPaused: false,
+        speedKmh: 0.0,
+      );
     } catch (e) {
       debugPrint('Error pausing tracking: $e');
     }
@@ -3839,55 +3889,108 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
       await dataChannel.invokeMethod('resumeTracking');
       setState(() {
         _isPaused = false;
-        _sessionStartTime = DateTime.now().millisecondsSinceEpoch - _lastKnownDurationMs;
+        _isAutoPaused = false;
+        _sessionStartTime =
+            DateTime.now().millisecondsSinceEpoch - _lastKnownDurationMs;
       });
+      _telemetryNotifier.value = _telemetryNotifier.value.copyWith(
+        isPaused: false,
+        isAutoPaused: false,
+      );
     } catch (e) {
       debugPrint('Error resuming tracking: $e');
     }
   }
 
+  // === 防误触停止确认 ===
+  Future<void> _requestStopTracking() async {
+    final choice = await showStopRideConfirmSheet(
+      context,
+      telemetry: _telemetryNotifier.value,
+      durationText: _durationNotifier.value,
+    );
+    if (choice == 'save') {
+      await _stopTracking(discard: false);
+    } else if (choice == 'discard') {
+      await _stopTracking(discard: true);
+    }
+  }
+
   // === 停止追踪 ===
-  Future<void> _stopTracking() async {
+  Future<void> _stopTracking({bool discard = false}) async {
     _durationTimer?.cancel();
-    
+    final savedDistanceKm = _telemetryNotifier.value.distanceKm;
+
     try {
-      await dataChannel.invokeMethod('stopTracking');
+      await dataChannel.invokeMethod('stopTracking', {'discard': discard});
     } catch (e) {
       debugPrint('Error stopping tracking: $e');
     }
 
+    await _applyKeepScreenOn(false);
+    await _mapChannel?.invokeMethod('setFollowLocation', false);
+
     setState(() {
       _isTracking = false;
       _isPaused = false;
+      _isAutoPaused = false;
+      _isFullScreenHud = false;
       _trackingPath.clear();
       _totalDistance = 0.0;
       _lastLat = null;
       _lastLng = null;
     });
     _durationNotifier.value = '00:00:00';
-    _trackingOverlayNotifier.value = const _TrackingOverlayData();
+    _telemetryNotifier.value = const RidingTelemetry();
     _mapChannel?.invokeMethod('setTrackingPath', <Map<String, double>>[]);
-    
-    // 延迟重新加载，给 Kotlin 保存 DB 留一点时间
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) _loadEntries();
-    });
-  }
 
-  // === 位置回调处理被删除，因为使用原生服务了 ===
-  // === UI 组装 (仅用于 Track Drawer 显示) ===
-  double _haversineDistance(double lat1, double lng1, double lat2, double lng2) {
-    const R = 6371000.0;
-    final dLat = (lat2 - lat1) * math.pi / 180;
-    final dLng = (lng2 - lng1) * math.pi / 180;
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(lat1 * math.pi / 180) * math.cos(lat2 * math.pi / 180) * math.sin(dLng / 2) * math.sin(dLng / 2);
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            discard
+                ? '已放弃本次记录'
+                : '本次${transportDisplayName(_selectedTransport)}已保存 · ${savedDistanceKm.toStringAsFixed(2)} km',
+          ),
+          backgroundColor: discard ? Colors.blueGrey : const Color(0xFF00A86B),
+        ),
+      );
+    }
+
+    // 延迟重新加载，给 Kotlin 保存 DB 和更新电量留一点时间
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (mounted) {
+        _loadEntries();
+        _loadEbikeConfig();
+        widget.onRideFinished?.call();
+      }
+    });
   }
 
   String _formatDuration(int ms) {
     final s = (ms ~/ 1000) % 60, m = (ms ~/ 60000) % 60, h = ms ~/ 3600000;
     return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  void _toggleKeepScreenOn() {
+    setState(() => _keepScreenOn = !_keepScreenOn);
+    _applyKeepScreenOn(_keepScreenOn);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_keepScreenOn ? '已开启屏幕常亮' : '已关闭屏幕常亮'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  void _toggleFollowCamera() {
+    setState(() => _followCamera = !_followCamera);
+    _mapChannel?.invokeMethod('setFollowLocation', _followCamera);
+    if (_followCamera) {
+      _mapChannel?.invokeMethod('centerLocation', {'zoom': 17.5});
+    }
   }
 
   @override
@@ -3907,7 +4010,7 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(32),
               ),
-              color: cs.surface.withValues(alpha: 0.9),
+              color: cs.surface.withValues(alpha: 0.92),
               child: Padding(
                 padding: const EdgeInsets.all(4),
                 child: Row(
@@ -3923,135 +4026,194 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
             ),
           ),
         ),
-        // 右上角设置
+        // 右上角设置 & 防杀后台体检
         Positioned(
           top: 56,
-          right: 16,
-          child: FloatingActionButton.small(
-            onPressed: () => _showApiKeyDialog(),
-            backgroundColor: cs.surface,
-            foregroundColor: cs.onSurface,
-            child: const Icon(Icons.settings_outlined),
-          ),
-        ),
-        // 追踪信息面板（仅在追踪时显示）
-        if (_isTracking)
-          Positioned(
-            bottom: 185,
-            left: 16,
-            right: 90,
-            child: ValueListenableBuilder<_TrackingOverlayData>(
-              valueListenable: _trackingOverlayNotifier,
-              builder: (context, tracking, _) => Card(
-                elevation: 6,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                color: cs.surface.withValues(alpha: 0.95),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          ValueListenableBuilder<String>(
-                            valueListenable: _durationNotifier,
-                            builder: (context, value, _) =>
-                                _trackingStat(Icons.timer, value, "时长", cs),
-                          ),
-                          _trackingStat(
-                            Icons.straighten,
-                            "${(tracking.totalDistanceMeters / 1000).toStringAsFixed(3)} km",
-                            "距离",
-                            cs,
-                          ),
-                          _trackingStat(Icons.scatter_plot, "${tracking.pointCount}", "点位", cs),
-                        ],
-                      ),
-                      if (tracking.lat != null && tracking.lng != null) ...[
-                        const Divider(height: 24),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.location_on, size: 14, color: cs.primary),
-                            const SizedBox(width: 4),
-                            Text(
-                              "Lat: ${tracking.lat!.toStringAsFixed(3)}  Lng: ${tracking.lng!.toStringAsFixed(3)}",
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: "monospace",
-                                color: cs.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        // 右下角 FAB 组
-        Positioned(
-          bottom: 110,
           right: 16,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 定位按钮
-              FloatingActionButton(
-                heroTag: "locate_btn",
-                onPressed: _handleLocateMe,
-                backgroundColor: cs.surfaceContainerHighest,
-                child: Icon(Icons.my_location, color: cs.primary),
+              FloatingActionButton.small(
+                heroTag: "map_settings_btn",
+                tooltip: "地图 API 设置",
+                onPressed: () => _showApiKeyDialog(),
+                backgroundColor: cs.surface,
+                foregroundColor: cs.onSurface,
+                child: const Icon(Icons.settings_outlined),
               ),
-              const SizedBox(height: 16),
-              // 开始/停止/暂停足迹记录按钮组
-              if (!_isTracking)
-                FloatingActionButton(
-                  heroTag: "track_start_btn",
-                  onPressed: _startTracking,
-                  backgroundColor: cs.primary,
-                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
-                )
-              else
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 暂停/继续按钮
-                    FloatingActionButton(
-                      heroTag: "track_pause_btn",
-                      onPressed: () => _isPaused ? _resumeTracking() : _pauseTracking(),
-                      backgroundColor: Colors.orangeAccent,
-                      child: Icon(_isPaused ? Icons.play_arrow : Icons.pause, color: Colors.white, size: 32),
-                    ),
-                    const SizedBox(height: 12),
-                    // 停止按钮
-                    FloatingActionButton(
-                      heroTag: "track_stop_btn",
-                      onPressed: _stopTracking,
-                      backgroundColor: Colors.red,
-                      child: const Icon(Icons.stop, color: Colors.white, size: 32),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 8),
+              FloatingActionButton.small(
+                heroTag: "map_keepalive_btn",
+                tooltip: "骑行防断连体检",
+                onPressed: () => showBackgroundKeepAliveDialog(context),
+                backgroundColor: cs.surface,
+                foregroundColor: cs.primary,
+                child: const Icon(Icons.shield_outlined),
+              ),
             ],
           ),
         ),
+
+        // 未追踪时：底部出行方式快选条（默认电动车）
+        if (!_isTracking)
+          Positioned(
+            bottom: 112,
+            left: 16,
+            right: 88,
+            child: Card(
+              elevation: 5,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+              color: cs.surface.withValues(alpha: 0.94),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _transportChip('EBIKE', '电动车', Icons.electric_scooter, cs),
+                    _transportChip('BIKE', '单车', Icons.directions_bike, cs),
+                    _transportChip('WALK', '步行', Icons.directions_walk, cs),
+                    _transportChip('CAR', '自驾', Icons.directions_car, cs),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+        // 追踪中：实时骑行仪表盘卡片
+        if (_isTracking && !_isFullScreenHud)
+          Positioned(
+            bottom: 110,
+            left: 12,
+            right: 82,
+            child: ValueListenableBuilder<RidingTelemetry>(
+              valueListenable: _telemetryNotifier,
+              builder: (context, telemetry, _) => RidingTelemetryCard(
+                telemetry: telemetry,
+                durationNotifier: _durationNotifier,
+                ebikeConfig: _ebikeConfig,
+                keepScreenOn: _keepScreenOn,
+                followCamera: _followCamera,
+                onToggleKeepScreenOn: _toggleKeepScreenOn,
+                onToggleFollowCamera: _toggleFollowCamera,
+                onOpenFullScreenHud: () => setState(() => _isFullScreenHud = true),
+              ),
+            ),
+          ),
+
+        // 右下角 FAB 组
+        if (!_isFullScreenHud)
+          Positioned(
+            bottom: 110,
+            right: 14,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton(
+                  heroTag: "locate_btn",
+                  onPressed: _handleLocateMe,
+                  backgroundColor: cs.surfaceContainerHighest,
+                  child: Icon(Icons.my_location, color: cs.primary),
+                ),
+                const SizedBox(height: 14),
+                if (!_isTracking)
+                  FloatingActionButton(
+                    heroTag: "track_start_btn",
+                    tooltip: "开始${transportDisplayName(_selectedTransport)}记录",
+                    onPressed: _startTracking,
+                    backgroundColor: cs.primary,
+                    child: Icon(
+                      _selectedTransport == 'EBIKE'
+                          ? Icons.electric_scooter
+                          : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  )
+                else
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FloatingActionButton(
+                        heroTag: "track_pause_btn",
+                        tooltip: _isPaused ? "继续记录" : "暂停记录",
+                        onPressed: () =>
+                            _isPaused ? _resumeTracking() : _pauseTracking(),
+                        backgroundColor: _isPaused
+                            ? const Color(0xFF00C853)
+                            : Colors.orangeAccent,
+                        child: Icon(
+                          _isPaused ? Icons.play_arrow : Icons.pause,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FloatingActionButton(
+                        heroTag: "track_stop_btn",
+                        tooltip: "结束骑行",
+                        onPressed: _requestStopTracking,
+                        backgroundColor: Colors.redAccent,
+                        child: const Icon(Icons.stop, color: Colors.white, size: 30),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+
+        // 全屏骑行码表 HUD 模式
+        if (_isTracking && _isFullScreenHud)
+          Positioned.fill(
+            child: FullScreenRideHud(
+              telemetryNotifier: _telemetryNotifier,
+              durationNotifier: _durationNotifier,
+              ebikeConfig: _ebikeConfig,
+              keepScreenOn: _keepScreenOn,
+              onToggleKeepScreenOn: _toggleKeepScreenOn,
+              onTogglePause: () =>
+                  _isPaused ? _resumeTracking() : _pauseTracking(),
+              onRequestStop: _requestStopTracking,
+              onClose: () => setState(() => _isFullScreenHud = false),
+            ),
+          ),
       ],
     );
   }
 
-  Widget _trackingStat(IconData icon, String value, String label, ColorScheme cs) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: cs.primary, size: 20),
-        const SizedBox(height: 4),
-        Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: cs.onSurface)),
-        Text(label, style: TextStyle(color: cs.outline, fontSize: 11)),
-      ],
+  Widget _transportChip(String code, String label, IconData icon, ColorScheme cs) {
+    final selected = _selectedTransport == code;
+    return GestureDetector(
+      onTap: () {
+        setState(() => _selectedTransport = code);
+        dataChannel.invokeMethod('saveEbikeConfig', {'defaultTransport': code});
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? cs.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -5412,7 +5574,8 @@ class _TimeFootprintPlaybackPageState extends State<TimeFootprintPlaybackPage> {
       _mapChannel?.invokeMethod('setEntries', _filteredEntries);
       _mapChannel?.invokeMethod('setTrackingPath', tracks.map((t) => {
         'lat': (t['latitude'] as num?)?.toDouble(),
-        'lng': (t['longitude'] as num?)?.toDouble()
+        'lng': (t['longitude'] as num?)?.toDouble(),
+        'speed': (t['speed'] as num?)?.toDouble() ?? 0.0,
       }).toList());
       
       // Auto center to the first point of the track or entry

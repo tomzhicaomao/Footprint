@@ -21,11 +21,15 @@ data class FootprintEntry(
     val transportType: TransportType = TransportType.UNKNOWN,
     val carbonSavedKg: Double = 0.0,
     val adcode: String? = null,
-    val icon: String = "LocationOn"
+    val icon: String = "LocationOn",
+    val sessionId: Long? = null,
+    val durationSec: Long = 0L,
+    val avgSpeedKmh: Double = 0.0,
+    val maxSpeedKmh: Double = 0.0
 )
 
 enum class TransportType(val label: String) {
-    WALK("步行"), BIKE("骑行"), CAR("自驾"), TRAIN("铁路"), PLANE("航空"), UNKNOWN("未知")
+    WALK("步行"), BIKE("骑行"), EBIKE("电动车"), CAR("自驾"), TRAIN("铁路"), PLANE("航空"), UNKNOWN("未知")
 }
 
 data class TravelGoal(

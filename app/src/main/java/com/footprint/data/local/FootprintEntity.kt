@@ -26,5 +26,9 @@ data class FootprintEntity(
     @ColumnInfo(name = "transport_type") val transportType: String = "UNKNOWN",
     @ColumnInfo(name = "carbon_saved") val carbonSaved: Double = 0.0,
     val adcode: String? = null,
-    val icon: String = "LocationOn"
+    val icon: String = "LocationOn",
+    @ColumnInfo(name = "session_id") val sessionId: Long? = null,
+    @ColumnInfo(name = "duration_sec") val durationSec: Long = 0L,
+    @ColumnInfo(name = "avg_speed_kmh") val avgSpeedKmh: Double = 0.0,
+    @ColumnInfo(name = "max_speed_kmh") val maxSpeedKmh: Double = 0.0
 )

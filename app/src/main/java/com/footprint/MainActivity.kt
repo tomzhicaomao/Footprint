@@ -27,8 +27,11 @@ class MainActivity : FlutterActivity() {
 
     private val EXPORT_REQUEST_CODE = 1001
     private val IMPORT_REQUEST_CODE = 1002
+    private val EXPORT_GPX_REQUEST_CODE = 1003
 
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingGpxContent: String? = null
+    private var previewVoiceAnnouncer: com.footprint.service.RideVoiceAnnouncer? = null
 
     private val gson =
             GsonBuilder()
@@ -116,7 +119,36 @@ class MainActivity : FlutterActivity() {
                                                 mapOf(
                                                         "latitude" to it.latitude,
                                                         "longitude" to it.longitude,
-                                                        "timestamp" to it.timestamp
+                                                        "timestamp" to it.timestamp,
+                                                        "speed" to it.speed,
+                                                        "altitude" to it.altitude,
+                                                        "accuracy" to it.accuracy
+                                                )
+                                            }
+                                    val json = gson.toJson(list)
+                                    withContext(Dispatchers.Main) { result.success(json) }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        result.error("QUERY_FAILED", e.message, null)
+                                    }
+                                }
+                            }
+                        }
+                        "getTrackPointsBySession" -> {
+                            val args = call.arguments as? Map<*, *> ?: return@setMethodCallHandler
+                            val sessionId = (args["sessionId"] as? Number)?.toLong() ?: 0L
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                try {
+                                    val points = repository.getTrackPointsBySessionId(sessionId)
+                                    val list =
+                                            points.map {
+                                                mapOf(
+                                                        "latitude" to it.latitude,
+                                                        "longitude" to it.longitude,
+                                                        "timestamp" to it.timestamp,
+                                                        "speed" to it.speed,
+                                                        "altitude" to it.altitude,
+                                                        "accuracy" to it.accuracy
                                                 )
                                             }
                                     val json = gson.toJson(list)
@@ -164,28 +196,51 @@ class MainActivity : FlutterActivity() {
                                     mapOf(
                                             "isTracking" to service.isTracking.value,
                                             "isPaused" to service.isPaused.value,
+                                            "isAutoPaused" to service.isAutoPaused.value,
                                             "totalDistance" to service.totalDistance.value,
                                             "totalDurationMs" to service.totalDurationMs,
                                             "sessionStartTime" to service.sessionStartTime,
+                                            "currentSpeedKmh" to service.currentSpeedKmh.value,
+                                            "avgSpeedKmh" to service.avgSpeedKmh,
+                                            "maxSpeedKmh" to service.maxSpeedKmh.value,
+                                            "accuracy" to service.gpsAccuracy.value,
+                                            "transportType" to service.activeTransportType.value,
+                                            "address" to (service.currentLocation.value?.address ?: ""),
+                                            "pointCount" to service.trackingPath.value.size,
                                             "path" to
                                                     service.trackingPath.value.map {
                                                         mapOf(
                                                                 "latitude" to it.latitude,
-                                                                "longitude" to it.longitude
+                                                                "longitude" to it.longitude,
+                                                                "speed" to it.speed
                                                         )
                                                     }
                                     )
                             result.success(gson.toJson(state))
                         }
                         "startTracking" -> {
+                            val transport =
+                                    when (val arg = call.arguments) {
+                                        is Map<*, *> -> arg["transportType"] as? String
+                                        is String -> arg
+                                        else -> null
+                                    }
                             com.footprint.service.LocationTrackingService.startTracking(
-                                    this@MainActivity
+                                    this@MainActivity,
+                                    transport
                             )
                             result.success(true)
                         }
                         "stopTracking" -> {
+                            val discard =
+                                    when (val arg = call.arguments) {
+                                        is Map<*, *> -> arg["discard"] as? Boolean ?: false
+                                        is Boolean -> arg
+                                        else -> false
+                                    }
                             com.footprint.service.LocationTrackingService.stopTracking(
-                                    this@MainActivity
+                                    this@MainActivity,
+                                    discard
                             )
                             result.success(true)
                         }
@@ -200,6 +255,156 @@ class MainActivity : FlutterActivity() {
                                     this@MainActivity
                             )
                             result.success(true)
+                        }
+                        "getEbikeConfig" -> {
+                            val prefs = com.footprint.utils.PreferenceManager(this@MainActivity)
+                            val cfg =
+                                    mapOf(
+                                            "ebikeName" to prefs.ebikeName,
+                                            "fullRangeKm" to prefs.ebikeFullRangeKm,
+                                            "sinceChargeKm" to prefs.ebikeSinceChargeKm,
+                                            "lastChargeTime" to prefs.ebikeLastChargeTime,
+                                            "autoPauseEnabled" to prefs.ebikeAutoPauseEnabled,
+                                            "keepScreenOn" to prefs.ebikeKeepScreenOn,
+                                            "defaultTransport" to prefs.defaultTrackingTransport,
+                                            "bluetoothAutoTrackEnabled" to prefs.bluetoothAutoTrackEnabled,
+                                            "bluetoothAutoStopEnabled" to prefs.bluetoothAutoStopEnabled,
+                                            "bluetoothDeviceAddress" to prefs.bluetoothDeviceAddress,
+                                            "bluetoothDeviceName" to prefs.bluetoothDeviceName,
+                                            "voiceAnnounceEnabled" to prefs.voiceAnnounceEnabled,
+                                            "voiceAnnounceIntervalKm" to prefs.voiceAnnounceIntervalKm,
+                                            "voiceLowBatteryAlertEnabled" to prefs.voiceLowBatteryAlertEnabled
+                                    )
+                            result.success(gson.toJson(cfg))
+                        }
+                        "saveEbikeConfig" -> {
+                            val args = call.arguments as? Map<*, *>
+                            val prefs = com.footprint.utils.PreferenceManager(this@MainActivity)
+                            (args?.get("ebikeName") as? String)?.let { prefs.ebikeName = it }
+                            (args?.get("fullRangeKm") as? Number)?.let { prefs.ebikeFullRangeKm = it.toFloat() }
+                            (args?.get("sinceChargeKm") as? Number)?.let { prefs.ebikeSinceChargeKm = it.toFloat() }
+                            (args?.get("autoPauseEnabled") as? Boolean)?.let { prefs.ebikeAutoPauseEnabled = it }
+                            (args?.get("keepScreenOn") as? Boolean)?.let { prefs.ebikeKeepScreenOn = it }
+                            (args?.get("defaultTransport") as? String)?.let { prefs.defaultTrackingTransport = it }
+                            (args?.get("bluetoothAutoTrackEnabled") as? Boolean)?.let { prefs.bluetoothAutoTrackEnabled = it }
+                            (args?.get("bluetoothAutoStopEnabled") as? Boolean)?.let { prefs.bluetoothAutoStopEnabled = it }
+                            (args?.get("bluetoothDeviceAddress") as? String)?.let { prefs.bluetoothDeviceAddress = it }
+                            (args?.get("bluetoothDeviceName") as? String)?.let { prefs.bluetoothDeviceName = it }
+                            (args?.get("voiceAnnounceEnabled") as? Boolean)?.let { prefs.voiceAnnounceEnabled = it }
+                            (args?.get("voiceAnnounceIntervalKm") as? Number)?.let { prefs.voiceAnnounceIntervalKm = it.toFloat() }
+                            (args?.get("voiceLowBatteryAlertEnabled") as? Boolean)?.let { prefs.voiceLowBatteryAlertEnabled = it }
+                            result.success(true)
+                        }
+                        "getPairedBluetoothDevices" -> {
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                                                androidx.core.content.ContextCompat.checkSelfPermission(
+                                                        this@MainActivity,
+                                                        android.Manifest.permission.BLUETOOTH_CONNECT
+                                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    result.error("BT_PERMISSION", "需要授予附近设备（蓝牙）权限", null)
+                                    return@setMethodCallHandler
+                                }
+                                val btManager =
+                                        getSystemService(android.bluetooth.BluetoothManager::class.java)
+                                val adapter = btManager?.adapter
+                                if (adapter == null) {
+                                    result.error("BT_UNSUPPORTED", "当前设备不支持蓝牙", null)
+                                    return@setMethodCallHandler
+                                }
+                                val devices =
+                                        adapter.bondedDevices
+                                                ?.map { dev ->
+                                                    mapOf(
+                                                            "name" to (dev.name ?: "未知蓝牙设备"),
+                                                            "address" to (dev.address ?: "")
+                                                    )
+                                                }
+                                                ?.filter { (it["address"] as String).isNotEmpty() }
+                                                ?.sortedBy { (it["name"] as String).lowercase() }
+                                                ?: emptyList()
+                                result.success(gson.toJson(devices))
+                            } catch (e: SecurityException) {
+                                result.error("BT_PERMISSION", "缺少蓝牙权限: ${e.message}", null)
+                            } catch (e: Exception) {
+                                result.error("BT_ERROR", e.message, null)
+                            }
+                        }
+                        "testVoiceAnnouncement" -> {
+                            val prefs = com.footprint.utils.PreferenceManager(this@MainActivity)
+                            val remaining =
+                                    (prefs.ebikeFullRangeKm - prefs.ebikeSinceChargeKm)
+                                            .coerceAtLeast(0f)
+                                            .toInt()
+                            val sampleText =
+                                    (call.arguments as? String)?.takeIf { it.isNotBlank() }
+                                            ?: "语音播报测试正常。已骑行2公里，用时6分钟，平均时速20公里每小时，当前预估剩余续航约${remaining}公里。"
+                            val announcer =
+                                    previewVoiceAnnouncer
+                                            ?: com.footprint.service.RideVoiceAnnouncer(applicationContext)
+                                                    .also { previewVoiceAnnouncer = it }
+                            announcer.speak(sampleText, flush = true)
+                            result.success(true)
+                        }
+                        "resetEbikeCharge" -> {
+                            com.footprint.utils.PreferenceManager(this@MainActivity).resetEbikeCharge()
+                            result.success(true)
+                        }
+                        "setKeepScreenOn" -> {
+                            val enabled = call.arguments as? Boolean ?: false
+                            runOnUiThread {
+                                if (enabled) {
+                                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                                } else {
+                                    window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                                }
+                            }
+                            result.success(true)
+                        }
+                        "exportTrackGpx" -> {
+                            val args = call.arguments as? Map<*, *> ?: return@setMethodCallHandler
+                            val title = (args["title"] as? String)?.ifBlank { "骑行轨迹" } ?: "骑行轨迹"
+                            val sessionId = (args["sessionId"] as? Number)?.toLong()
+                            val startTime = (args["startTime"] as? Number)?.toLong() ?: 0L
+                            val endTime = (args["endTime"] as? Number)?.toLong() ?: 0L
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                try {
+                                    val points =
+                                            if (sessionId != null && sessionId > 0L) {
+                                                repository.getTrackPointsBySessionId(sessionId)
+                                            } else {
+                                                repository.getTrackPointsOnce(startTime, endTime)
+                                            }
+                                    if (points.isEmpty()) {
+                                        withContext(Dispatchers.Main) {
+                                            result.error("EMPTY_TRACK", "当前记录没有可导出的轨迹点", null)
+                                        }
+                                        return@launch
+                                    }
+                                    val gpxXml = buildGpxXml(title, points)
+                                    withContext(Dispatchers.Main) {
+                                        pendingResult = result
+                                        pendingGpxContent = gpxXml
+                                        val safeName =
+                                                title.replace(Regex("[^\\w\\u4e00-\\u9fa5-]"), "_")
+                                        val intent =
+                                                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                                    type = "application/gpx+xml"
+                                                    putExtra(
+                                                            Intent.EXTRA_TITLE,
+                                                            "${safeName}_${System.currentTimeMillis()}.gpx"
+                                                    )
+                                                }
+                                        startActivityForResult(intent, EXPORT_GPX_REQUEST_CODE)
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        result.error("GPX_FAILED", e.message, null)
+                                    }
+                                }
+                            }
                         }
                         "isIgnoringBatteryOptimizations" -> {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -614,74 +819,101 @@ class MainActivity : FlutterActivity() {
                             private var locationJob: Job? = null
                             private var statusJob: Job? = null
                             private var distanceJob: Job? = null
+                            private var speedJob: Job? = null
 
                             override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                                val service = com.footprint.service.LocationTrackingService
                                 locationJob =
                                         lifecycleScope.launch {
-                                            com.footprint.service.LocationTrackingService
-                                                    .currentLocation
-                                                    .collect { loc ->
-                                                        loc?.let {
-                                                            events.success(
-                                                                    gson.toJson(
-                                                                            mapOf(
-                                                                                    "type" to
-                                                                                            "location",
-                                                                                    "data" to
-                                                                                            mapOf(
-                                                                                                    "latitude" to
-                                                                                                            it.latitude,
-                                                                                                    "longitude" to
-                                                                                                            it.longitude,
-                                                                                                    "address" to
-                                                                                                            (it.address
-                                                                                                                    ?: "")
-                                                                                            )
-                                                                            )
+                                            service.currentLocation.collect { loc ->
+                                                loc?.let {
+                                                    events.success(
+                                                            gson.toJson(
+                                                                    mapOf(
+                                                                            "type" to "location",
+                                                                            "data" to
+                                                                                    mapOf(
+                                                                                            "latitude" to it.latitude,
+                                                                                            "longitude" to it.longitude,
+                                                                                            "altitude" to it.altitude,
+                                                                                            "accuracy" to it.accuracy,
+                                                                                            "speedKmh" to service.currentSpeedKmh.value,
+                                                                                            "avgSpeedKmh" to service.avgSpeedKmh,
+                                                                                            "maxSpeedKmh" to service.maxSpeedKmh.value,
+                                                                                            "pointCount" to service.trackingPath.value.size,
+                                                                                            "address" to (it.address ?: "")
+                                                                                    )
                                                                     )
                                                             )
-                                                        }
-                                                    }
+                                                    )
+                                                }
+                                            }
                                         }
                                 statusJob =
                                         lifecycleScope.launch {
-                                            com.footprint.service.LocationTrackingService.isTracking
-                                                    .collect { isTracking ->
-                                                        val service = com.footprint.service.LocationTrackingService
-                                                        events.success(
-                                                                gson.toJson(
-                                                                        mapOf(
-                                                                                "type" to "status",
-                                                                                "isTracking" to isTracking,
-                                                                                "isPaused" to service.isPaused.value,
-                                                                                "durationMs" to service.totalDurationMs
-                                                                        )
+                                            kotlinx.coroutines.flow.combine(
+                                                    service.isTracking,
+                                                    service.isPaused,
+                                                    service.isAutoPaused
+                                            ) { isTracking, isPaused, isAutoPaused ->
+                                                Triple(isTracking, isPaused, isAutoPaused)
+                                            }.collect { (isTracking, isPaused, isAutoPaused) ->
+                                                events.success(
+                                                        gson.toJson(
+                                                                mapOf(
+                                                                        "type" to "status",
+                                                                        "isTracking" to isTracking,
+                                                                        "isPaused" to isPaused,
+                                                                        "isAutoPaused" to isAutoPaused,
+                                                                        "transportType" to service.activeTransportType.value,
+                                                                        "durationMs" to service.totalDurationMs
                                                                 )
                                                         )
-                                                    }
+                                                )
+                                            }
                                         }
                                 distanceJob =
                                         lifecycleScope.launch {
-                                            com.footprint.service.LocationTrackingService
-                                                    .totalDistance
-                                                    .collect { distance ->
-                                                        events.success(
-                                                                gson.toJson(
-                                                                        mapOf(
-                                                                                "type" to
-                                                                                        "distance",
-                                                                                "distance" to
-                                                                                        distance
-                                                                        )
+                                            service.totalDistance.collect { distance ->
+                                                events.success(
+                                                        gson.toJson(
+                                                                mapOf(
+                                                                        "type" to "distance",
+                                                                        "distance" to distance,
+                                                                        "avgSpeedKmh" to service.avgSpeedKmh,
+                                                                        "maxSpeedKmh" to service.maxSpeedKmh.value,
+                                                                        "pointCount" to service.trackingPath.value.size
                                                                 )
                                                         )
-                                                    }
+                                                )
+                                            }
+                                        }
+                                speedJob =
+                                        lifecycleScope.launch {
+                                            service.currentSpeedKmh.collect { speedKmh ->
+                                                if (service.isTracking.value) {
+                                                    events.success(
+                                                            gson.toJson(
+                                                                    mapOf(
+                                                                            "type" to "telemetry",
+                                                                            "speedKmh" to speedKmh,
+                                                                            "avgSpeedKmh" to service.avgSpeedKmh,
+                                                                            "maxSpeedKmh" to service.maxSpeedKmh.value,
+                                                                            "accuracy" to service.gpsAccuracy.value,
+                                                                            "isAutoPaused" to service.isAutoPaused.value,
+                                                                            "pointCount" to service.trackingPath.value.size
+                                                                    )
+                                                            )
+                                                    )
+                                                }
+                                            }
                                         }
                             }
                             override fun onCancel(arguments: Any?) {
                                 locationJob?.cancel()
                                 statusJob?.cancel()
                                 distanceJob?.cancel()
+                                speedJob?.cancel()
                             }
                         }
                 )
@@ -971,12 +1203,76 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
+            EXPORT_GPX_REQUEST_CODE -> {
+                val gpxContent = pendingGpxContent
+                pendingGpxContent = null
+                if (gpxContent == null) {
+                    pendingResult?.error("GPX_EMPTY", "没有待导出的 GPX 数据", null)
+                    return
+                }
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        contentResolver.openOutputStream(uri)?.use { out ->
+                            out.write(gpxContent.toByteArray(Charsets.UTF_8))
+                            out.flush()
+                        }
+                        withContext(Dispatchers.Main) { pendingResult?.success(true) }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        withContext(Dispatchers.Main) {
+                            pendingResult?.error("GPX_EXPORT_FAILED", e.message ?: "GPX 导出失败", null)
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    private fun buildGpxXml(
+            title: String,
+            points: List<com.footprint.data.local.TrackPointEntity>
+    ): String {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        val escapedTitle =
+                title.replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace("\"", "&quot;")
+        val sb = StringBuilder()
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        sb.append("<gpx version=\"1.1\" creator=\"Footprint E-Bike Tracker\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+        sb.append("  <metadata>\n")
+        sb.append("    <name>$escapedTitle</name>\n")
+        sb.append("    <time>${sdf.format(java.util.Date(points.first().timestamp))}</time>\n")
+        sb.append("  </metadata>\n")
+        sb.append("  <trk>\n")
+        sb.append("    <name>$escapedTitle</name>\n")
+        sb.append("    <trkseg>\n")
+        for (p in points) {
+            sb.append("      <trkpt lat=\"${p.latitude}\" lon=\"${p.longitude}\">\n")
+            if (p.altitude != 0.0) {
+                sb.append("        <ele>${"%.1f".format(java.util.Locale.US, p.altitude)}</ele>\n")
+            }
+            sb.append("        <time>${sdf.format(java.util.Date(p.timestamp))}</time>\n")
+            sb.append("      </trkpt>\n")
+        }
+        sb.append("    </trkseg>\n")
+        sb.append("  </trk>\n")
+        sb.append("</gpx>\n")
+        return sb.toString()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+    }
+
+    override fun onDestroy() {
+        previewVoiceAnnouncer?.shutdown()
+        previewVoiceAnnouncer = null
+        super.onDestroy()
     }
 
     private fun getAppVersionName(): String {

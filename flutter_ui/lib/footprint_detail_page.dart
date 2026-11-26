@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'main.dart';
+import 'ebike_ride_widgets.dart';
 
 class FootprintDetailPage extends StatefulWidget {
   final dynamic entry;
@@ -15,15 +16,17 @@ class FootprintDetailPage extends StatefulWidget {
 }
 
 class _FootprintDetailPageState extends State<FootprintDetailPage> {
+  static const _dataChannel = MethodChannel('com.footprint/data');
   late Map<String, dynamic> entry;
-  List<Map<String, double>> trackPoints = [];
+  List<Map<String, dynamic>> trackPoints = [];
+  List<double> speedSamplesKmh = [];
   MethodChannel? _mapChannel;
+  bool _isExportingGpx = false;
 
   late String title;
   late String location;
   late String date;
-  late String mood;
-  late Color moodColor;
+  late Color accentColor;
   late String weather;
   late String detail;
   late double distance;
@@ -31,15 +34,17 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
   late List<String> photos;
   late String travelMode;
   late IconData travelIcon;
+  late String rawTransport;
+  int? sessionId;
+  int durationSec = 0;
+  double avgSpeedKmh = 0.0;
+  double maxSpeedKmh = 0.0;
+  double carbonSavedKg = 0.0;
 
   @override
   void initState() {
     super.initState();
     entry = widget.entry != null ? Map<String, dynamic>.from(widget.entry!) : {};
-
-    if (entry['happenedOn'] != null) {
-      _loadTrackPoints(entry['happenedOn']);
-    }
 
     title = entry['title'] ?? "未命名足迹";
     location = entry['location'] ?? "未知地点";
@@ -56,16 +61,18 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
     }
 
     date = entry['happenedOn'] ?? "未知日期";
-    
-    String rawMood = entry['mood'] ?? "";
-    mood = _mapMoodToChinese(rawMood);
-    moodColor = _getMoodColor(rawMood);
-    
     weather = entry['weather'] ?? "-";
     detail = entry['detail'] ?? entry['notes'] ?? "没有记录详细内容。";
     distance = (entry['distanceKm'] as num?)?.toDouble() ?? 0.0;
     energy = (entry['energyLevel'] as num?)?.toInt() ?? 0;
-    
+    sessionId = (entry['sessionId'] as num?)?.toInt();
+    durationSec = (entry['durationSec'] as num?)?.toInt() ?? 0;
+    avgSpeedKmh = (entry['avgSpeedKmh'] as num?)?.toDouble() ?? 0.0;
+    maxSpeedKmh = (entry['maxSpeedKmh'] as num?)?.toDouble() ?? 0.0;
+    carbonSavedKg = (entry['carbonSavedKg'] as num?)?.toDouble() ??
+        (entry['carbonSaved'] as num?)?.toDouble() ??
+        0.0;
+
     // Parse photos if it's a list or comma-separated string
     final rawPhotos = entry['photos'];
     if (rawPhotos is List) {
@@ -76,41 +83,124 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
       photos = [];
     }
 
-    final t = entry['transportType'] ?? entry['transportMethod'] ?? "UNKNOWN";
-    switch(t) {
-      case "WALK": travelMode = "步行"; travelIcon = Icons.directions_walk; break;
-      case "BIKE": travelMode = "骑行"; travelIcon = Icons.directions_bike; break;
-      case "CAR": travelMode = "自驾"; travelIcon = Icons.directions_car; break;
-      case "TRAIN": travelMode = "铁路"; travelIcon = Icons.train; break;
-      case "PLANE": travelMode = "航空"; travelIcon = Icons.flight; break;
-      default: travelMode = "未知"; travelIcon = Icons.help_outline;
+    rawTransport = (entry['transportType'] ?? entry['transportMethod'] ?? "UNKNOWN").toString();
+    switch (rawTransport) {
+      case "EBIKE":
+        travelMode = "电动车";
+        travelIcon = Icons.electric_scooter;
+        accentColor = const Color(0xFF00897B);
+        break;
+      case "WALK":
+        travelMode = "步行";
+        travelIcon = Icons.directions_walk;
+        accentColor = const Color(0xFF1E88E5);
+        break;
+      case "BIKE":
+        travelMode = "骑行";
+        travelIcon = Icons.directions_bike;
+        accentColor = const Color(0xFF43A047);
+        break;
+      case "CAR":
+        travelMode = "自驾";
+        travelIcon = Icons.directions_car;
+        accentColor = const Color(0xFFFB8C00);
+        break;
+      case "TRAIN":
+        travelMode = "铁路";
+        travelIcon = Icons.train;
+        accentColor = const Color(0xFF5E35B1);
+        break;
+      case "PLANE":
+        travelMode = "航空";
+        travelIcon = Icons.flight;
+        accentColor = const Color(0xFF039BE5);
+        break;
+      default:
+        travelMode = "未知";
+        travelIcon = Icons.route;
+        accentColor = Colors.blueGrey;
     }
+
+    _loadTrackPoints();
   }
 
-  Future<void> _loadTrackPoints(String dateStr) async {
+  Future<void> _loadTrackPoints() async {
     try {
-      final date = DateTime.parse(dateStr);
-      final startTime = DateTime.utc(date.year, date.month, date.day).millisecondsSinceEpoch;
-      final endTime = startTime + 86400000;
-      final result = await const MethodChannel('com.footprint/data')
-          .invokeMethod('getTrackPoints', {'startTime': startTime, 'endTime': endTime});
+      String? result;
+      // 1. Prefer exact sessionId query so multiple rides on the same day never merge
+      if (sessionId != null && sessionId! > 0) {
+        result = await _dataChannel.invokeMethod<String>(
+          'getTrackPointsBySession',
+          {'sessionId': sessionId},
+        );
+      }
+
+      // 2. Fallback to local-timezone day range for legacy entries
+      if ((result == null || result == '[]') && entry['happenedOn'] != null) {
+        final parsedDate = DateTime.parse(entry['happenedOn']);
+        final startTime = DateTime(parsedDate.year, parsedDate.month, parsedDate.day)
+            .millisecondsSinceEpoch;
+        final endTime = startTime + 86400000 - 1;
+        result = await _dataChannel.invokeMethod<String>(
+          'getTrackPoints',
+          {'startTime': startTime, 'endTime': endTime},
+        );
+      }
+
       if (result != null) {
         final List<dynamic> list = jsonDecode(result);
+        final parsedPoints = list
+            .map((p) => {
+                  'lat': (p['latitude'] as num).toDouble(),
+                  'lng': (p['longitude'] as num).toDouble(),
+                  'speed': (p['speed'] as num?)?.toDouble() ?? 0.0,
+                  'timestamp': (p['timestamp'] as num?)?.toInt() ?? 0,
+                })
+            .toList();
+
+        // Extract speed samples (km/h) for chart and derive stats for legacy rides
+        final speeds = <double>[];
+        double derivedMax = 0.0;
+        double sumSpd = 0.0;
+        int movingSamples = 0;
+        for (int i = 0; i < parsedPoints.length; i++) {
+          final spdMs = (parsedPoints[i]['speed'] as double);
+          final spdKmh = (spdMs * 3.6).clamp(0.0, 120.0);
+          speeds.add(spdKmh);
+          if (spdKmh > derivedMax) derivedMax = spdKmh;
+          if (spdKmh > 1.0) {
+            sumSpd += spdKmh;
+            movingSamples++;
+          }
+        }
+
+        int derivedDurationSec = durationSec;
+        if (derivedDurationSec <= 0 && parsedPoints.length >= 2) {
+          final firstTs = parsedPoints.first['timestamp'] as int;
+          final lastTs = parsedPoints.last['timestamp'] as int;
+          if (lastTs > firstTs) {
+            derivedDurationSec = ((lastTs - firstTs) / 1000).round();
+          }
+        }
+
+        double derivedAvg = avgSpeedKmh;
+        if (derivedAvg <= 0 && distance > 0.02 && derivedDurationSec >= 5) {
+          derivedAvg = distance / (derivedDurationSec / 3600.0);
+        } else if (derivedAvg <= 0 && movingSamples > 0) {
+          derivedAvg = sumSpd / movingSamples;
+        }
+
+        final finalMax = maxSpeedKmh > 0 ? maxSpeedKmh : derivedMax;
+
         if (mounted) {
           setState(() {
-            trackPoints = list.map((p) => {
-              'lat': p['latitude'] as double,
-              'lng': p['longitude'] as double
-            }).toList();
+            trackPoints = parsedPoints;
+            speedSamplesKmh = speeds;
+            durationSec = derivedDurationSec;
+            avgSpeedKmh = derivedAvg;
+            maxSpeedKmh = finalMax;
           });
-          if (_mapChannel != null && trackPoints.isNotEmpty) {
-             _mapChannel?.invokeMethod('setTrackingPath', trackPoints);
-             _mapChannel?.invokeMethod('centerLocation', {
-               'latitude': trackPoints.first['lat'],
-               'longitude': trackPoints.first['lng'],
-               'zoom': 15.0
-             });
-          }
+          _pushTrackToMap();
         }
       }
     } catch (e) {
@@ -118,57 +208,99 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
     }
   }
 
-  String _mapMoodToChinese(String englishMood) {
-    if (englishMood.contains(RegExp(r'[\u4e00-\u9fa5]'))) return englishMood;
-    switch (englishMood.toUpperCase()) {
-      case "EXCITED": return "激情";
-      case "CURIOUS": return "探索";
-      case "RELAXED": return "放松";
-      case "REFLECTIVE": return "思考";
-      case "HAPPY": return "愉快";
-      case "CALM": return "平静";
-      default: return englishMood.isEmpty ? "平静" : englishMood;
+  void _pushTrackToMap() {
+    if (_mapChannel == null || trackPoints.isEmpty) return;
+    _mapChannel?.invokeMethod('setTrackingPath', {
+      'points': trackPoints,
+      'showEndpoints': true,
+      'fitBounds': true,
+    });
+  }
+
+  Future<void> _exportGpx() async {
+    if (_isExportingGpx) return;
+    setState(() => _isExportingGpx = true);
+    try {
+      int startMs = 0;
+      int endMs = 0;
+      if (entry['happenedOn'] != null) {
+        final d = DateTime.parse(entry['happenedOn']);
+        startMs = DateTime(d.year, d.month, d.day).millisecondsSinceEpoch;
+        endMs = startMs + 86400000 - 1;
+      }
+      await _dataChannel.invokeMethod('exportTrackGpx', {
+        'title': title,
+        'sessionId': sessionId ?? 0,
+        'startTime': startMs,
+        'endTime': endMs,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('GPX 轨迹文件已成功导出'),
+            backgroundColor: Color(0xFF00A86B),
+          ),
+        );
+      }
+    } on PlatformException catch (e) {
+      if (mounted && e.code != 'CANCELLED') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? '导出 GPX 失败'), backgroundColor: Colors.orange),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingGpx = false);
     }
   }
 
-  Color _getMoodColor(String englishMood) {
-    switch (englishMood.toUpperCase()) {
-      case "EXCITED": return Colors.orange;
-      case "CURIOUS": return Colors.teal;
-      case "RELAXED": return Colors.blue;
-      case "REFLECTIVE": return Colors.purple;
-      case "HAPPY": return Colors.orange;
-      case "CALM": return Colors.blue;
-      default: return Colors.blueGrey;
+  String _formatDurationText(int totalSec) {
+    if (totalSec <= 0) return '-';
+    final h = totalSec ~/ 3600;
+    final m = (totalSec % 3600) ~/ 60;
+    final s = totalSec % 60;
+    if (h > 0) {
+      return '${h}h ${m}m';
     }
+    if (m > 0) {
+      return '$m分${s.toString().padLeft(2, '0')}秒';
+    }
+    return '$s秒';
   }
-
-  int? selectedPhotoIndex;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isRideEntry = rawTransport == 'EBIKE' || rawTransport == 'BIKE' || durationSec > 0;
+    final hasSpeedData = speedSamplesKmh.length >= 2 && speedSamplesKmh.any((v) => v > 0.8);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: isDark ? cs.surface : Colors.transparent,
       body: Stack(
         children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.white.withOpacity(0.68),
-                    kAtelierCanvas,
-                    const Color(0xFFEDE2D7),
-                  ],
+          if (!isDark)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.68),
+                      kAtelierCanvas,
+                      const Color(0xFFEDE2D7),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           Positioned(
             top: -110,
             right: -90,
@@ -177,29 +309,42 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
               height: 250,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: moodColor.withOpacity(0.14),
+                color: accentColor.withValues(alpha: 0.14),
               ),
             ),
           ),
           CustomScrollView(
             slivers: [
               SliverAppBar(
-                expandedHeight: 300,
+                expandedHeight: 280,
                 pinned: true,
                 backgroundColor: Colors.transparent,
                 iconTheme: IconThemeData(color: cs.onSurface),
                 actions: [
+                  if (trackPoints.length >= 2)
+                    IconButton(
+                      tooltip: '导出 GPX 轨迹',
+                      icon: _isExportingGpx
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.download_rounded),
+                      onPressed: _exportGpx,
+                    ),
                   IconButton(
+                    tooltip: '编辑足迹',
                     icon: const Icon(Icons.edit),
                     onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
+                      final navigator = Navigator.of(context);
+                      final result = await navigator.push(
                         MaterialPageRoute(
                           builder: (context) => AddFootprintPage(initialEntry: widget.entry),
                         ),
                       );
-                      if (result == true) {
-                        Navigator.pop(context, true); // Pop to list and refresh
+                      if (result == true && mounted) {
+                        navigator.pop(true);
                       }
                     },
                   ),
@@ -208,15 +353,17 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                   background: Stack(
                     fit: StackFit.expand,
                     children: [
-                      // Hero background image or color
                       Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              Color.alphaBlend(Colors.white.withOpacity(0.18), moodColor.withOpacity(0.72)),
-                              moodColor.withOpacity(0.24),
+                              Color.alphaBlend(
+                                Colors.white.withValues(alpha: 0.18),
+                                accentColor.withValues(alpha: 0.72),
+                              ),
+                              accentColor.withValues(alpha: 0.24),
                             ],
                           ),
                           borderRadius: const BorderRadius.vertical(
@@ -224,7 +371,6 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                           ),
                         ),
                       ),
-                      // Gradient overlay
                       Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
@@ -232,34 +378,63 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.transparent,
-                              kAtelierCanvas,
+                              isDark ? cs.surface : kAtelierCanvas,
                             ],
                           ),
                         ),
                       ),
-                      // Text overlay
                       Positioned(
                         left: 24,
-                        bottom: 24,
+                        right: 24,
+                        bottom: 20,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                               decoration: BoxDecoration(
-                                color: moodColor.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
+                                color: accentColor.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              child: Text(mood, style: tt.labelMedium?.copyWith(color: moodColor)),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(travelIcon, size: 14, color: accentColor),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    travelMode,
+                                    style: tt.labelMedium?.copyWith(
+                                      color: accentColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             const SizedBox(height: 8),
-                            Text(title, style: tt.headlineLarge?.copyWith(fontWeight: FontWeight.w900, color: cs.onSurface)),
+                            Text(
+                              title,
+                              style: tt.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: cs.onSurface,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
                             Row(
                               children: [
                                 Icon(Icons.location_on, size: 16, color: cs.primary),
                                 const SizedBox(width: 4),
-                                Text(location, style: tt.bodyMedium?.copyWith(color: cs.primary)),
+                                Flexible(
+                                  child: Text(
+                                    location,
+                                    style: tt.bodyMedium?.copyWith(color: cs.primary),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
                                   child: Text("•", style: TextStyle(color: cs.outline)),
@@ -267,26 +442,31 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                                 Text(date, style: tt.bodyMedium?.copyWith(color: cs.outline)),
                               ],
                             ),
-                            const SizedBox(height: 12),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: cs.primaryContainer.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(16),
+                            if (carbonSavedKg > 0.01) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00C853).withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.eco, size: 15, color: Color(0xFF00A86B)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '绿色出行减碳 ${carbonSavedKg.toStringAsFixed(2)} kg · 约省油费 ¥${(distance * 0.65).toStringAsFixed(1)}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF00A86B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.wb_sunny, size: 20, color: Colors.orange), // hologram placeholder
-                                  const SizedBox(width: 8),
-                                  Text(_mapWeatherToChinese(weather), style: tt.labelLarge?.copyWith(color: Colors.orange)),
-                                  const SizedBox(width: 8),
-                                  Text("•", style: TextStyle(color: Colors.orange.withOpacity(0.5))),
-                                  const SizedBox(width: 8),
-                                  Text(date, style: tt.labelLarge?.copyWith(color: Colors.orange)),
-                                ],
-                              ),
-                            )
+                            ],
                           ],
                         ),
                       ),
@@ -296,18 +476,40 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
               ),
               SliverList(
                 delegate: SliverChildListDelegate([
-                  // Stats row
+                  // Primary Stats Row (Riding telemetry vs general)
                   Padding(
-                    padding: const EdgeInsets.only(top: 24, bottom: 24, left: 16, right: 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _statDrop("里程", "${distance.toStringAsFixed(1)} KM", travelIcon, cs, tt),
-                        _statDrop("出行", travelMode, travelIcon, cs, tt),
-                        _statDrop("能量", "$energy", Icons.bolt, cs, tt),
-                        _statDrop("心情", mood, Icons.mood, cs, tt),
-                      ],
-                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+                    child: isRideEntry
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _statDrop("总里程", "${distance.toStringAsFixed(2)} km", travelIcon, cs, tt),
+                              _statDrop("骑行用时", _formatDurationText(durationSec), Icons.timer_outlined, cs, tt),
+                              _statDrop(
+                                "平均时速",
+                                avgSpeedKmh > 0 ? "${avgSpeedKmh.toStringAsFixed(1)} km/h" : "-",
+                                Icons.speed,
+                                cs,
+                                tt,
+                              ),
+                              _statDrop(
+                                "最高时速",
+                                maxSpeedKmh > 0 ? "${maxSpeedKmh.toStringAsFixed(1)} km/h" : "-",
+                                Icons.flash_on,
+                                cs,
+                                tt,
+                              ),
+                            ],
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _statDrop("里程", "${distance.toStringAsFixed(2)} km", travelIcon, cs, tt),
+                              _statDrop("出行", travelMode, travelIcon, cs, tt),
+                              _statDrop("天气", weather, Icons.wb_sunny_outlined, cs, tt),
+                              _statDrop("轨迹点", "${trackPoints.length}", Icons.route, cs, tt),
+                            ],
+                          ),
                   ),
 
                   // Detail Body
@@ -316,16 +518,29 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                     child: Text(
                       detail,
                       style: tt.bodyLarge?.copyWith(
-                        height: 1.8,
-                        letterSpacing: 0.5,
+                        height: 1.7,
+                        letterSpacing: 0.3,
                         color: cs.onSurfaceVariant,
                       ),
                     ),
                   ),
-                  
+
+                  // Speed Curve Chart (when riding speed data exists)
+                  if (hasSpeedData) ...[
+                    const SizedBox(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: RideSpeedChart(
+                        speedsKmh: speedSamplesKmh,
+                        avgSpeedKmh: avgSpeedKmh,
+                        maxSpeedKmh: maxSpeedKmh,
+                      ),
+                    ),
+                  ],
+
                   // Gallery
                   if (photos.isNotEmpty) ...[
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 28),
                     Padding(
                       padding: const EdgeInsets.only(left: 24, bottom: 12),
                       child: Text("瞬间", style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
@@ -345,9 +560,14 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(16),
                               child: file.existsSync()
-                                ? Image.file(file, width: 150, height: 200, fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => _photoPlaceholder(cs))
-                                : _photoPlaceholder(cs),
+                                  ? Image.file(
+                                      file,
+                                      width: 150,
+                                      height: 200,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => _photoPlaceholder(cs),
+                                    )
+                                  : _photoPlaceholder(cs),
                             ),
                           );
                         },
@@ -355,15 +575,27 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                     ),
                   ],
 
-                  const SizedBox(height: 32),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 24, bottom: 12),
-                    child: Text("足迹轨迹", style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                  ),
+                  const SizedBox(height: 28),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Row(
+                      children: [
+                        Text("骑行轨迹地图", style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        if (trackPoints.length >= 2)
+                          TextButton.icon(
+                            onPressed: _pushTrackToMap,
+                            icon: const Icon(Icons.fit_screen, size: 16),
+                            label: const Text('全景居中', style: TextStyle(fontSize: 12)),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Container(
-                      height: 250,
+                      height: 280,
                       decoration: BoxDecoration(
                         color: cs.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(24),
@@ -377,13 +609,16 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                           },
                           onPlatformViewCreated: (id) {
                             _mapChannel = MethodChannel('com.footprint/amap_$id');
+                            _mapChannel?.invokeMethod('setTheme', isDark);
+                            _mapChannel?.invokeMethod('setMapMode', 'STANDARD');
                             if (trackPoints.isNotEmpty) {
-                               _mapChannel?.invokeMethod('setTrackingPath', trackPoints);
-                               _mapChannel?.invokeMethod('centerLocation', {
-                                  'latitude': trackPoints.first['lat'],
-                                  'longitude': trackPoints.first['lng'],
-                                  'zoom': 15.0
-                               });
+                              _pushTrackToMap();
+                            } else if (entry['latitude'] != null && entry['longitude'] != null) {
+                              _mapChannel?.invokeMethod('centerLocation', {
+                                'latitude': (entry['latitude'] as num).toDouble(),
+                                'longitude': (entry['longitude'] as num).toDouble(),
+                                'zoom': 15.0,
+                              });
                             }
                           },
                         ),
@@ -400,42 +635,40 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
     );
   }
 
-  String _mapWeatherToChinese(String englishWeather) {
-    if (englishWeather.contains(RegExp(r'[\u4e00-\u9fa5]'))) return englishWeather;
-    final w = (englishWeather).toUpperCase();
-    if (w.contains("SUNNY")) return "晴天";
-    if (w.contains("CLOUDY")) return "多云";
-    if (w.contains("RAIN")) return "雨天";
-    if (w.contains("SNOW")) return "雪天";
-    if (w.contains("WIND")) return "大风";
-    if (w.contains("MIST") || w.contains("FOG")) return "薄雾";
-    if (w.contains("PARTLY")) return "晴间多云";
-    if (w.contains("THUNDER")) return "雷阵雨";
-    return englishWeather;
-  }
-
   Widget _statDrop(String label, String value, IconData icon, ColorScheme cs, TextTheme tt) {
-    return Column(
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest,
-            shape: BoxShape.circle,
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: cs.primary, size: 20),
           ),
-          child: Icon(icon, color: cs.primary),
-        ),
-        const SizedBox(height: 8),
-        Text(value, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-        Text(label, style: tt.labelSmall?.copyWith(color: cs.outline)),
-      ],
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(label, style: tt.labelSmall?.copyWith(color: cs.outline)),
+        ],
+      ),
     );
   }
+
   Widget _photoPlaceholder(ColorScheme cs) {
     return Container(
-      width: 150, height: 200,
-      decoration: BoxDecoration(color: cs.surfaceContainerHighest, borderRadius: BorderRadius.circular(16)),
+      width: 150,
+      height: 200,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: const Center(child: Icon(Icons.broken_image, size: 48, color: Colors.grey)),
     );
   }

@@ -17,7 +17,7 @@ import androidx.room.TypeConverters
                         TimeCapsuleEntity::class,
                         UserBadgeEntity::class,
                         UserStatsEntity::class],
-        version = 13,
+        version = 14,
         exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -256,6 +256,27 @@ abstract class FootprintDatabase : RoomDatabase() {
                                 }
                         }
 
+                val MIGRATION_13_14 =
+                        object : androidx.room.migration.Migration(13, 14) {
+                                override fun migrate(
+                                        db: androidx.sqlite.db.SupportSQLiteDatabase
+                                ) {
+                                        val statements = listOf(
+                                                "ALTER TABLE footprints ADD COLUMN session_id INTEGER",
+                                                "ALTER TABLE footprints ADD COLUMN duration_sec INTEGER NOT NULL DEFAULT 0",
+                                                "ALTER TABLE footprints ADD COLUMN avg_speed_kmh REAL NOT NULL DEFAULT 0.0",
+                                                "ALTER TABLE footprints ADD COLUMN max_speed_kmh REAL NOT NULL DEFAULT 0.0"
+                                        )
+                                        statements.forEach { sql ->
+                                                try {
+                                                        db.execSQL(sql)
+                                                } catch (_: Exception) {
+                                                        // Column might already exist
+                                                }
+                                        }
+                                }
+                        }
+
                 fun getInstance(context: Context): FootprintDatabase =
                         instance
                                 ?: synchronized(this) {
@@ -269,7 +290,7 @@ abstract class FootprintDatabase : RoomDatabase() {
                                         "footprint-db"
                                 )
                                 .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
-                                .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                                .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                                 .fallbackToDestructiveMigration()
                                 .build()
         }

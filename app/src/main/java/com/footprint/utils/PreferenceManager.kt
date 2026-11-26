@@ -162,4 +162,75 @@ class PreferenceManager(context: Context) {
     var eternalInnerGateUnlocked: Boolean
         get() = prefs.getBoolean("eternal_inner_gate_unlocked", false)
         set(value) = prefs.edit().putBoolean("eternal_inner_gate_unlocked", value).apply()
+
+    // --- E-Bike Riding & Battery Range Preferences ---
+    var ebikeName: String
+        get() = prefs.getString("ebike_name", "我的电动车") ?: "我的电动车"
+        set(value) = prefs.edit().putString("ebike_name", value.ifBlank { "我的电动车" }).apply()
+
+    var ebikeFullRangeKm: Float
+        get() = prefs.getFloat("ebike_full_range_km", 60.0f).coerceIn(10f, 300f)
+        set(value) = prefs.edit().putFloat("ebike_full_range_km", value.coerceIn(10f, 300f)).apply()
+
+    var ebikeSinceChargeKm: Float
+        get() = prefs.getFloat("ebike_since_charge_km", 0.0f).coerceAtLeast(0f)
+        set(value) = prefs.edit().putFloat("ebike_since_charge_km", value.coerceAtLeast(0f)).apply()
+
+    var ebikeLastChargeTime: Long
+        get() = prefs.getLong("ebike_last_charge_time", 0L)
+        set(value) = prefs.edit().putLong("ebike_last_charge_time", value).apply()
+
+    var ebikeAutoPauseEnabled: Boolean
+        get() = prefs.getBoolean("ebike_auto_pause_enabled", true)
+        set(value) = prefs.edit().putBoolean("ebike_auto_pause_enabled", value).apply()
+
+    var ebikeKeepScreenOn: Boolean
+        get() = prefs.getBoolean("ebike_keep_screen_on", true)
+        set(value) = prefs.edit().putBoolean("ebike_keep_screen_on", value).apply()
+
+    var defaultTrackingTransport: String
+        get() = prefs.getString("default_tracking_transport", "EBIKE") ?: "EBIKE"
+        set(value) = prefs.edit().putString("default_tracking_transport", value).apply()
+
+    fun addEbikeChargeMileage(deltaKm: Double) {
+        if (deltaKm <= 0.0) return
+        ebikeSinceChargeKm = (ebikeSinceChargeKm + deltaKm.toFloat()).coerceAtLeast(0f)
+    }
+
+    fun resetEbikeCharge() {
+        prefs.edit()
+            .putFloat("ebike_since_charge_km", 0.0f)
+            .putLong("ebike_last_charge_time", System.currentTimeMillis())
+            .apply()
+    }
+
+    // --- Bluetooth Auto Start/Stop Preferences ---
+    var bluetoothAutoTrackEnabled: Boolean
+        get() = prefs.getBoolean("bt_auto_track_enabled", false)
+        set(value) = prefs.edit().putBoolean("bt_auto_track_enabled", value).apply()
+
+    var bluetoothAutoStopEnabled: Boolean
+        get() = prefs.getBoolean("bt_auto_stop_enabled", true)
+        set(value) = prefs.edit().putBoolean("bt_auto_stop_enabled", value).apply()
+
+    var bluetoothDeviceAddress: String
+        get() = prefs.getString("bt_device_address", "") ?: ""
+        set(value) = prefs.edit().putString("bt_device_address", value.trim()).apply()
+
+    var bluetoothDeviceName: String
+        get() = prefs.getString("bt_device_name", "") ?: ""
+        set(value) = prefs.edit().putString("bt_device_name", value.trim()).apply()
+
+    // --- Ride Voice Announcement (TTS) Preferences ---
+    var voiceAnnounceEnabled: Boolean
+        get() = prefs.getBoolean("voice_announce_enabled", true)
+        set(value) = prefs.edit().putBoolean("voice_announce_enabled", value).apply()
+
+    var voiceAnnounceIntervalKm: Float
+        get() = prefs.getFloat("voice_announce_interval_km", 1.0f).coerceIn(0.5f, 20.0f)
+        set(value) = prefs.edit().putFloat("voice_announce_interval_km", value.coerceIn(0.5f, 20.0f)).apply()
+
+    var voiceLowBatteryAlertEnabled: Boolean
+        get() = prefs.getBoolean("voice_low_battery_alert_enabled", true)
+        set(value) = prefs.edit().putBoolean("voice_low_battery_alert_enabled", value).apply()
 }

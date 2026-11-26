@@ -120,6 +120,12 @@ class FootprintRepository(
                 return trackPointDao.getPointsInRangeOnce(startTime, endTime)
         }
 
+        suspend fun getTrackPointsBySessionId(
+                sessionId: Long
+        ): List<com.footprint.data.local.TrackPointEntity> {
+                return trackPointDao.getPointsBySessionId(sessionId)
+        }
+
         /** Get all de-duplicated location points for fog exploration mask */
         suspend fun getAllDistinctLocations(): List<com.footprint.data.local.TrackPointEntity> {
                 return trackPointDao.getAllDistinctLocations()
@@ -299,7 +305,11 @@ class FootprintRepository(
                                 },
                         carbonSavedKg = carbonSaved,
                         adcode = adcode,
-                        icon = icon
+                        icon = icon,
+                        sessionId = sessionId,
+                        durationSec = durationSec,
+                        avgSpeedKmh = avgSpeedKmh,
+                        maxSpeedKmh = maxSpeedKmh
                 )
 
         private fun FootprintEntry.toEntity() =
@@ -322,7 +332,11 @@ class FootprintRepository(
                         transportType = transportType.name,
                         carbonSaved = carbonSavedKg,
                         adcode = adcode,
-                        icon = icon
+                        icon = icon,
+                        sessionId = sessionId,
+                        durationSec = durationSec,
+                        avgSpeedKmh = avgSpeedKmh,
+                        maxSpeedKmh = maxSpeedKmh
                 )
 
         private fun TravelGoalEntity.toModel() =
