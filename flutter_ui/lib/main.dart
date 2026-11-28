@@ -20,8 +20,8 @@ import 'easter_egg.dart';
 import 'ebike_ride_widgets.dart';
 import 'package:flutter/foundation.dart';
 
-const String kAppVersionName = '3.9.1';
-const int kAppBuildNumber = 60;
+const String kAppVersionName = '3.9.2';
+const int kAppBuildNumber = 61;
 const String kAppVersionLabel = 'Footprint v$kAppVersionName (Build $kAppBuildNumber)';
 
 const Color kAtelierCanvas = Color(0xFFF4EFE7);
@@ -3999,167 +3999,320 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final topInset = MediaQuery.of(context).padding.top;
+    final surfaceGlass = cs.surface.withValues(alpha: isDark ? 0.90 : 0.94);
+    final borderGlass = cs.outlineVariant.withValues(alpha: isDark ? 0.35 : 0.45);
+    final softShadow = [
+      BoxShadow(
+        color: Colors.black.withValues(alpha: isDark ? 0.32 : 0.10),
+        blurRadius: 16,
+        offset: const Offset(0, 6),
+      ),
+    ];
+
     return Stack(
       children: [
         Positioned.fill(child: NativeMapView(onCreated: _onMapCreated)),
-        // 模式选择器 (Top Center)
-        Positioned(
-          top: 56,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(32),
-              ),
-              color: cs.surface.withValues(alpha: 0.92),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    "标准",
-                    "迷雾",
-                    "热力",
-                    "胶囊",
-                  ].map((m) => _buildModeBtn(m, cs)).toList(),
-                ),
-              ),
-            ),
-          ),
-        ),
-        // 右上角设置 & 防杀后台体检
-        Positioned(
-          top: 56,
-          right: 16,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton.small(
-                heroTag: "map_settings_btn",
-                tooltip: "地图 API 设置",
-                onPressed: () => _showApiKeyDialog(),
-                backgroundColor: cs.surface,
-                foregroundColor: cs.onSurface,
-                child: const Icon(Icons.settings_outlined),
-              ),
-              const SizedBox(height: 8),
-              FloatingActionButton.small(
-                heroTag: "map_keepalive_btn",
-                tooltip: "骑行防断连体检",
-                onPressed: () => showBackgroundKeepAliveDialog(context),
-                backgroundColor: cs.surface,
-                foregroundColor: cs.primary,
-                child: const Icon(Icons.shield_outlined),
-              ),
-            ],
-          ),
-        ),
 
-        // 未追踪时：底部出行方式快选条（默认电动车）
-        if (!_isTracking)
-          Positioned(
-            bottom: 112,
-            left: 16,
-            right: 88,
-            child: Card(
-              elevation: 5,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-              color: cs.surface.withValues(alpha: 0.94),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _transportChip('EBIKE', '电动车', Icons.electric_scooter, cs),
-                    _transportChip('BIKE', '单车', Icons.directions_bike, cs),
-                    _transportChip('WALK', '步行', Icons.directions_walk, cs),
-                    _transportChip('CAR', '自驾', Icons.directions_car, cs),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-        // 追踪中：实时骑行仪表盘卡片
-        if (_isTracking && !_isFullScreenHud)
-          Positioned(
-            bottom: 110,
-            left: 12,
-            right: 82,
-            child: ValueListenableBuilder<RidingTelemetry>(
-              valueListenable: _telemetryNotifier,
-              builder: (context, telemetry, _) => RidingTelemetryCard(
-                telemetry: telemetry,
-                durationNotifier: _durationNotifier,
-                ebikeConfig: _ebikeConfig,
-                keepScreenOn: _keepScreenOn,
-                followCamera: _followCamera,
-                onToggleKeepScreenOn: _toggleKeepScreenOn,
-                onToggleFollowCamera: _toggleFollowCamera,
-                onOpenFullScreenHud: () => setState(() => _isFullScreenHud = true),
-              ),
-            ),
-          ),
-
-        // 右下角 FAB 组
+        // 顶部统一极简悬浮栏（仅保留标准地图状态胶囊 + 整合工具栏）
         if (!_isFullScreenHud)
           Positioned(
-            bottom: 110,
+            top: topInset + 12,
+            left: 16,
+            right: 16,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // 左侧：标准模式 & 爱车/骑行状态胶囊
+                Flexible(
+                  child: GestureDetector(
+                    onTap: _isTracking
+                        ? () => setState(() => _isFullScreenHud = true)
+                        : _handleLocateMe,
+                    child: Container(
+                      height: 42,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: surfaceGlass,
+                        borderRadius: BorderRadius.circular(21),
+                        border: Border.all(color: borderGlass),
+                        boxShadow: softShadow,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _isTracking
+                                  ? (_isPaused
+                                      ? Colors.orangeAccent
+                                      : const Color(0xFF00C853))
+                                  : cs.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              _isTracking
+                                  ? (_isPaused ? '已暂停记录' : '骑行记录中')
+                                  : '标准地图',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface,
+                              ),
+                            ),
+                          ),
+                          if (!_isTracking) ...[
+                            Container(
+                              width: 1,
+                              height: 12,
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              color: borderGlass,
+                            ),
+                            Icon(
+                              Icons.battery_charging_full,
+                              size: 14,
+                              color: _ebikeConfig.isLowBattery
+                                  ? Colors.redAccent
+                                  : const Color(0xFF00A86B),
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${_ebikeConfig.remainingRangeKm.toStringAsFixed(0)}km',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurfaceVariant,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                            if (_ebikeConfig.bluetoothAutoTrackEnabled &&
+                                _ebikeConfig.hasBoundBluetooth) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                _ebikeConfig.isBleMode
+                                    ? Icons.radar_rounded
+                                    : Icons.bluetooth_connected,
+                                size: 14,
+                                color: const Color(0xFF1E88E5),
+                              ),
+                            ],
+                          ] else ...[
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.fullscreen,
+                              size: 16,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // 右侧：统一磨砂工具胶囊（定位回中 / 防断连体检 / 地图设置）
+                Container(
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: surfaceGlass,
+                    borderRadius: BorderRadius.circular(21),
+                    border: Border.all(color: borderGlass),
+                    boxShadow: softShadow,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _topToolIconBtn(
+                        icon: Icons.my_location_rounded,
+                        tooltip: '回到当前位置',
+                        color: cs.primary,
+                        onTap: _handleLocateMe,
+                      ),
+                      Container(width: 1, height: 18, color: borderGlass),
+                      _topToolIconBtn(
+                        icon: Icons.shield_outlined,
+                        tooltip: '骑行防断连体检',
+                        color: cs.onSurfaceVariant,
+                        onTap: () => showBackgroundKeepAliveDialog(context),
+                      ),
+                      Container(width: 1, height: 18, color: borderGlass),
+                      _topToolIconBtn(
+                        icon: Icons.tune_rounded,
+                        tooltip: '地图 API 设置',
+                        color: cs.onSurfaceVariant,
+                        onTap: _showApiKeyDialog,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // 底部一体化骑行控制底座（未追踪态：出行方式分段条 + 全宽一键开始）
+        if (!_isTracking && !_isFullScreenHud)
+          Positioned(
+            bottom: 102,
+            left: 16,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              decoration: BoxDecoration(
+                color: surfaceGlass,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: borderGlass),
+                boxShadow: softShadow,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest.withValues(
+                        alpha: isDark ? 0.45 : 0.65,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        _transportChip('EBIKE', '电动车', Icons.electric_scooter, cs),
+                        _transportChip('BIKE', '单车', Icons.directions_bike, cs),
+                        _transportChip('WALK', '步行', Icons.directions_walk, cs),
+                        _transportChip('CAR', '自驾', Icons.directions_car, cs),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton.icon(
+                      onPressed: _startTracking,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: cs.primary,
+                        foregroundColor: cs.onPrimary,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      icon: Icon(
+                        _selectedTransport == 'EBIKE'
+                            ? Icons.electric_scooter
+                            : Icons.play_arrow_rounded,
+                        size: 22,
+                      ),
+                      label: Text(
+                        '开始${transportDisplayName(_selectedTransport)}记录',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        // 追踪中：全宽实时骑行仪表盘 + 对称控制栏（不再被右侧 FAB 挤压）
+        if (_isTracking && !_isFullScreenHud)
+          Positioned(
+            bottom: 102,
+            left: 14,
             right: 14,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                FloatingActionButton(
-                  heroTag: "locate_btn",
-                  onPressed: _handleLocateMe,
-                  backgroundColor: cs.surfaceContainerHighest,
-                  child: Icon(Icons.my_location, color: cs.primary),
+                ValueListenableBuilder<RidingTelemetry>(
+                  valueListenable: _telemetryNotifier,
+                  builder: (context, telemetry, _) => RidingTelemetryCard(
+                    telemetry: telemetry,
+                    durationNotifier: _durationNotifier,
+                    ebikeConfig: _ebikeConfig,
+                    keepScreenOn: _keepScreenOn,
+                    followCamera: _followCamera,
+                    onToggleKeepScreenOn: _toggleKeepScreenOn,
+                    onToggleFollowCamera: _toggleFollowCamera,
+                    onOpenFullScreenHud: () =>
+                        setState(() => _isFullScreenHud = true),
+                  ),
                 ),
-                const SizedBox(height: 14),
-                if (!_isTracking)
-                  FloatingActionButton(
-                    heroTag: "track_start_btn",
-                    tooltip: "开始${transportDisplayName(_selectedTransport)}记录",
-                    onPressed: _startTracking,
-                    backgroundColor: cs.primary,
-                    child: Icon(
-                      _selectedTransport == 'EBIKE'
-                          ? Icons.electric_scooter
-                          : Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 30,
-                    ),
-                  )
-                else
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      FloatingActionButton(
-                        heroTag: "track_pause_btn",
-                        tooltip: _isPaused ? "继续记录" : "暂停记录",
-                        onPressed: () =>
-                            _isPaused ? _resumeTracking() : _pauseTracking(),
-                        backgroundColor: _isPaused
-                            ? const Color(0xFF00C853)
-                            : Colors.orangeAccent,
-                        child: Icon(
-                          _isPaused ? Icons.play_arrow : Icons.pause,
-                          color: Colors.white,
-                          size: 30,
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 46,
+                        child: FilledButton.tonalIcon(
+                          onPressed: () =>
+                              _isPaused ? _resumeTracking() : _pauseTracking(),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _isPaused
+                                ? const Color(0xFF00C853)
+                                : surfaceGlass,
+                            foregroundColor: _isPaused
+                                ? Colors.white
+                                : Colors.orange.shade800,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: _isPaused
+                                  ? BorderSide.none
+                                  : BorderSide(color: borderGlass),
+                            ),
+                          ),
+                          icon: Icon(
+                            _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                            size: 22,
+                          ),
+                          label: Text(
+                            _isPaused ? '继续骑行' : '暂停记录',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      FloatingActionButton(
-                        heroTag: "track_stop_btn",
-                        tooltip: "结束骑行",
-                        onPressed: _requestStopTracking,
-                        backgroundColor: Colors.redAccent,
-                        child: const Icon(Icons.stop, color: Colors.white, size: 30),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SizedBox(
+                        height: 46,
+                        child: FilledButton.icon(
+                          onPressed: _requestStopTracking,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFE53935),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          icon: const Icon(Icons.stop_rounded, size: 22),
+                          label: const Text(
+                            '结束并保存',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -4183,69 +4336,68 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
     );
   }
 
-  Widget _transportChip(String code, String label, IconData icon, ColorScheme cs) {
-    final selected = _selectedTransport == code;
-    return GestureDetector(
-      onTap: () {
-        setState(() => _selectedTransport = code);
-        dataChannel.invokeMethod('saveEbikeConfig', {'defaultTransport': code});
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? cs.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: selected ? cs.onPrimary : cs.onSurfaceVariant,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
-                color: selected ? cs.onPrimary : cs.onSurfaceVariant,
-              ),
-            ),
-          ],
+  Widget _topToolIconBtn({
+    required IconData icon,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: SizedBox(
+          width: 40,
+          height: 42,
+          child: Icon(icon, size: 19, color: color),
         ),
       ),
     );
   }
 
-  Widget _buildModeBtn(String m, ColorScheme cs) {
-    final Map<String, String> modeMap = {
-      "标准": "STANDARD",
-      "迷雾": "FOG",
-      "热力": "HEATMAP",
-      "胶囊": "CAPSULE",
-    };
-    bool sel = mapMode == modeMap[m];
-    return GestureDetector(
-      onTap: () {
-        setState(() => mapMode = modeMap[m]!);
-        _updateNativeMap();
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: sel ? cs.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Text(
-          m,
-          style: TextStyle(
-            color: sel ? cs.onPrimary : cs.onSurface,
-            fontWeight: sel ? FontWeight.bold : null,
-            fontSize: 13,
+  Widget _transportChip(String code, String label, IconData icon, ColorScheme cs) {
+    final selected = _selectedTransport == code;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() => _selectedTransport = code);
+          dataChannel.invokeMethod('saveEbikeConfig', {'defaultTransport': code});
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? cs.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.07),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? cs.primary : cs.onSurfaceVariant,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                  color: selected ? cs.primary : cs.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
       ),
