@@ -20,8 +20,8 @@ import 'easter_egg.dart';
 import 'ebike_ride_widgets.dart';
 import 'package:flutter/foundation.dart';
 
-const String kAppVersionName = '4.0.0';
-const int kAppBuildNumber = 62;
+const String kAppVersionName = '4.0.1';
+const int kAppBuildNumber = 63;
 const String kAppVersionLabel = 'Footprint v$kAppVersionName (Build $kAppBuildNumber)';
 
 const Color kAtelierCanvas = Color(0xFFF4EFE7);

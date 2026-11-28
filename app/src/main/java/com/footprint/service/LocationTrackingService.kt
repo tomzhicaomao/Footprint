@@ -55,6 +55,12 @@ class LocationTrackingService : Service(), AMapLocationListener {
     private var _autoPauseAnchorLocation: AMapLocation? = null
     private var _smoothedSpeedMs: Float = 0f
     private var _startAddress: String = ""
+    private var _hasLockedGps: Boolean = false
+    private var _lastGpsFixWallMs: Long = 0L
+    private var _kalmanLat: Double = 0.0
+    private var _kalmanLng: Double = 0.0
+    private var _kalmanVariance: Double = -1.0
+    private var _kalmanTimestampMs: Long = 0L
 
     companion object {
         const val NOTIFICATION_ID = 1001
@@ -72,19 +78,19 @@ class LocationTrackingService : Service(), AMapLocationListener {
         private const val BT_DISCONNECT_GRACE_MS = 20000L
 
         // Thresholds tuned for e-bike / urban riding accuracy
-        private const val MAX_SPEED_EBIKE_MS = 28.0f // ~100 km/h ceiling rejects GPS teleports
-        private const val MAX_SPEED_WALK_MS = 10.0f // ~36 km/h
+        private const val MAX_SPEED_EBIKE_MS = 22.0f // ~79 km/h ceiling rejects GPS teleports
+        private const val MAX_SPEED_WALK_MS = 8.0f // ~29 km/h
         private const val MAX_SPEED_GENERAL_MS = 50.0f // ~180 km/h
-        private const val MAX_ACCURACY_STRICT_M = 35.0f
-        private const val MAX_ACCURACY_COLD_START_M = 65.0f
-        private const val MIN_CRUISE_DISTANCE_M = 1.5f
+        private const val MAX_ACCURACY_STRICT_M = 25.0f
+        private const val MAX_ACCURACY_COLD_START_M = 35.0f
+        private const val MIN_CRUISE_DISTANCE_M = 2.0f
         private const val MIN_VALID_LATLNG = 0.1
-        private const val BASE_INTERVAL_MS = 2500L
-        private const val STATIONARY_INTERVAL_MS = 20000L
-        private const val WAIT_INTERVAL_MS = 3000L
-        private const val WALKING_INTERVAL_MS = 4000L
-        private const val MOVING_INTERVAL_MS = 2000L
-        private const val FAST_MOVING_INTERVAL_MS = 1500L
+        private const val BASE_INTERVAL_MS = 1500L
+        private const val STATIONARY_INTERVAL_MS = 15000L
+        private const val WAIT_INTERVAL_MS = 2000L
+        private const val WALKING_INTERVAL_MS = 2500L
+        private const val MOVING_INTERVAL_MS = 1500L
+        private const val FAST_MOVING_INTERVAL_MS = 1000L
         private const val TRACK_BATCH_WINDOW_MS = 15000L
         private const val TRACK_BATCH_SIZE = 5
         private const val NOTIFICATION_UPDATE_INTERVAL_MS = 10000L
@@ -351,6 +357,10 @@ class LocationTrackingService : Service(), AMapLocationListener {
                 _smoothedSpeedMs = 0f
                 _startAddress = ""
                 _lastLocation = null
+                _hasLockedGps = false
+                _lastGpsFixWallMs = 0L
+                _kalmanVariance = -1.0
+                _kalmanTimestampMs = 0L
                 _autoPauseAnchorLocation = null
                 _lowSpeedSinceElapsedMs = 0L
                 _sessionStartTime = System.currentTimeMillis()
@@ -715,6 +725,24 @@ class LocationTrackingService : Service(), AMapLocationListener {
         }
 
         _gpsAccuracy.value = location.accuracy
+        val nowWall = System.currentTimeMillis()
+        val isGpsFix = location.locationType == AMapLocation.LOCATION_TYPE_GPS
+        if (isGpsFix) {
+            _hasLockedGps = true
+            _lastGpsFixWallMs = nowWall
+        } else if (_sharedIsTracking.value && !_sharedIsPaused.value && isStrictAccuracyMode()) {
+            // Reject WiFi/cell/cache fixes once GPS is locked (or until GPS times out for >18s)
+            val gpsTimedOut = _lastGpsFixWallMs > 0L && (nowWall - _lastGpsFixWallMs > 18_000L)
+            val coldStartAllow = !_hasLockedGps && (nowWall - _sessionStartTime > 12_000L) && location.accuracy <= 18.0f
+            if (!((gpsTimedOut && location.accuracy <= 16.0f) || coldStartAllow)) {
+                Log.d(
+                        "FootprintLoc",
+                        "Filtered non-GPS fix: type=${location.locationType}, acc=${location.accuracy}m"
+                )
+                return
+            }
+        }
+
         val accuracyLimit =
                 if (_lastLocation == null) MAX_ACCURACY_COLD_START_M
                 else if (isStrictAccuracyMode()) MAX_ACCURACY_STRICT_M
@@ -736,7 +764,10 @@ class LocationTrackingService : Service(), AMapLocationListener {
             return
         }
 
-        val now = System.currentTimeMillis()
+        // Apply lightweight 2D Kalman smoothing to reduce urban GPS zig-zag jitter
+        applyKalmanFilter(clonedLocation)
+
+        val now = nowWall
         val nowElapsed = SystemClock.elapsedRealtime()
         val autoPauseEnabled =
                 preferenceManager.ebikeAutoPauseEnabled && isStrictAccuracyMode()
@@ -755,12 +786,12 @@ class LocationTrackingService : Service(), AMapLocationListener {
 
         var isValidPoint = false
         var meaningfulMovement = false
-        var rawSpeedMs = location.speed.coerceAtLeast(0f)
+        var rawSpeedMs = clonedLocation.speed.coerceAtLeast(0f)
 
         val prevLoc = _lastLocation
         if (prevLoc != null) {
-            val distance = location.distanceTo(prevLoc)
-            val timeDeltaMs = (location.time - prevLoc.time).let {
+            val distance = clonedLocation.distanceTo(prevLoc)
+            val timeDeltaMs = (clonedLocation.time - prevLoc.time).let {
                 if (it > 0) it else 1000L
             }
             val timeDeltaSec = (timeDeltaMs / 1000.0).coerceAtLeast(0.5)
@@ -768,8 +799,8 @@ class LocationTrackingService : Service(), AMapLocationListener {
 
             // Prefer GPS Doppler speed when available and sensible
             rawSpeedMs =
-                    if (location.speed > 0.3f && location.accuracy <= 25f) {
-                        location.speed
+                    if (clonedLocation.speed > 0.3f && clonedLocation.accuracy <= 22f) {
+                        clonedLocation.speed
                     } else {
                         computedSpeedMs
                     }
@@ -779,6 +810,19 @@ class LocationTrackingService : Service(), AMapLocationListener {
                 Log.w(
                         "FootprintLoc",
                         "Ignored GPS glitch: $distance m in ${timeDeltaSec}s (${computedSpeedMs * 3.6} km/h)"
+                )
+                return
+            }
+
+            // Reject sudden single-fix jump spikes that contradict GPS Doppler speed
+            if (clonedLocation.speed >= 0f &&
+                            timeDeltaSec <= 5.0 &&
+                            distance > 22.0f &&
+                            computedSpeedMs > (clonedLocation.speed + 6.5f) * 2.2f
+            ) {
+                Log.w(
+                        "FootprintLoc",
+                        "Rejected Doppler-contradicting GPS spike: dist=${distance}m in ${timeDeltaSec}s, gpsSpeed=${clonedLocation.speed}m/s"
                 )
                 return
             }
@@ -865,6 +909,34 @@ class LocationTrackingService : Service(), AMapLocationListener {
                 )
             }
         }
+    }
+
+    private fun applyKalmanFilter(location: AMapLocation) {
+        val accMeters = location.accuracy.coerceAtLeast(3.0f).toDouble()
+        val timestampMs = if (location.time > 0L) location.time else System.currentTimeMillis()
+        if (_kalmanVariance < 0.0) {
+            _kalmanLat = location.latitude
+            _kalmanLng = location.longitude
+            _kalmanVariance = accMeters * accMeters
+            _kalmanTimestampMs = timestampMs
+            return
+        }
+
+        val dtSec = ((timestampMs - _kalmanTimestampMs).coerceAtLeast(0L) / 1000.0).coerceAtMost(30.0)
+        if (dtSec > 0.0) {
+            val processSpeed = maxOf(location.speed.coerceAtLeast(0f).toDouble(), 3.0)
+            _kalmanVariance += dtSec * processSpeed * processSpeed
+            _kalmanTimestampMs = timestampMs
+        }
+
+        val measVariance = accMeters * accMeters
+        val gain = _kalmanVariance / (_kalmanVariance + measVariance)
+        _kalmanLat += gain * (location.latitude - _kalmanLat)
+        _kalmanLng += gain * (location.longitude - _kalmanLng)
+        _kalmanVariance *= (1.0 - gain)
+
+        location.latitude = _kalmanLat
+        location.longitude = _kalmanLng
     }
 
     private fun handleAutoPauseState(
