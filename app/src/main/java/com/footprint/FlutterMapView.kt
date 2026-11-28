@@ -210,7 +210,7 @@ class FlutterMapView(
 
     private fun updateHistoryPolylinesForMode(force: Boolean = false) {
         val map = aMap ?: return
-        if (currentMode == "HEATMAP" || currentMode == "FOG" || currentMode == "STANDARD" || currentMode == "ETERNAL_REALM") {
+        if (currentMode == "HEATMAP" || currentMode == "FOG" || currentMode == "ETERNAL_REALM") {
             clearHistoryPolylines()
             return
         }

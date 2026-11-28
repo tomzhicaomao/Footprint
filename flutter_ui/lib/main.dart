@@ -20,8 +20,8 @@ import 'easter_egg.dart';
 import 'ebike_ride_widgets.dart';
 import 'package:flutter/foundation.dart';
 
-const String kAppVersionName = '3.9.2';
-const int kAppBuildNumber = 61;
+const String kAppVersionName = '4.0.0';
+const int kAppBuildNumber = 62;
 const String kAppVersionLabel = 'Footprint v$kAppVersionName (Build $kAppBuildNumber)';
 
 const Color kAtelierCanvas = Color(0xFFF4EFE7);
@@ -1323,34 +1323,23 @@ class MainContainer extends StatefulWidget {
 class _MainContainerState extends State<MainContainer>
     with TickerProviderStateMixin {
   static const List<String> _tabLabels = <String>[
-    '总览',
-    '探索',
-    '计划',
-    '工坊',
+    '行程',
+    '地图',
   ];
   static const List<IconData> _selectedTabIcons = <IconData>[
-    Icons.dashboard,
-    Icons.explore,
-    Icons.flag,
-    Icons.palette,
+    Icons.route,
+    Icons.map,
   ];
   static const List<IconData> _unselectedTabIcons = <IconData>[
-    Icons.dashboard_outlined,
-    Icons.explore_outlined,
-    Icons.outlined_flag,
-    Icons.palette_outlined,
+    Icons.route_outlined,
+    Icons.map_outlined,
   ];
   int _selectedIndex = 0;
   late AnimationController _navController;
   late Animation<double> _elasticAnimation;
   bool _isHiding = false;
 
-  final EventChannel _badgeChannel = const EventChannel('com.footprint/badge_events');
-  StreamSubscription? _badgeSub;
-  final List<dynamic> _badgeQueue = [];
-  bool _isShowingBadge = false;
-
-  // GlobalKey 用于通知地图页面和总览页面 tab 切换事件
+  // GlobalKey 用于通知地图页面和行程页面 tab 切换事件
   final GlobalKey<_ExploreMapScreenState> _mapKey = GlobalKey<_ExploreMapScreenState>();
   final GlobalKey<_DashboardScreenState> _dashboardKey = GlobalKey<_DashboardScreenState>();
 
@@ -1382,108 +1371,6 @@ class _MainContainerState extends State<MainContainer>
       TweenSequenceItem(tween: Tween(begin: 1.12, end: 0.95).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
       TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
     ]).animate(_tabBounceController);
-
-    _badgeSub = _badgeChannel.receiveBroadcastStream().listen((event) {
-      if (event != null) {
-        try {
-          final badgeData = jsonDecode(event.toString());
-          _badgeQueue.add(badgeData);
-          _processBadgeQueue();
-        } catch (e) {
-          debugPrint("Failed to parse badge: $e");
-        }
-      }
-    });
-  }
-
-  void _processBadgeQueue() async {
-    if (_isShowingBadge || _badgeQueue.isEmpty) return;
-    _isShowingBadge = true;
-    final badge = _badgeQueue.removeAt(0);
-
-    // Show capsule using Overlay
-    if (mounted) {
-      _showBadgeCapsule(badge);
-    }
-
-    await Future.delayed(const Duration(seconds: 4));
-    _isShowingBadge = false;
-    _processBadgeQueue();
-  }
-
-  void _showBadgeCapsule(dynamic badge) {
-    if (!mounted) return;
-    OverlayState? overlayState = Overlay.of(context);
-    late OverlayEntry overlayEntry;
-
-    overlayEntry = OverlayEntry(
-      builder: (context) {
-        return Positioned(
-          top: MediaQuery.of(context).padding.top + 16,
-          left: 16,
-          right: 16,
-          child: TweenAnimationBuilder<double>(
-            duration: const Duration(milliseconds: 600),
-            tween: Tween(begin: -100.0, end: 0.0),
-            curve: Curves.elasticOut,
-            builder: (context, value, child) {
-              return Transform.translate(
-                offset: Offset(0, value),
-                child: child,
-              );
-            },
-            child: Material(
-              color: Colors.transparent,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.1),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                    child: Row(
-                      children: [
-                        const Text("🏆", style: TextStyle(fontSize: 28)),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text("边界突破！解锁 [${badge['title']}]", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              Text(badge['description'] ?? '', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-
-    overlayState.insert(overlayEntry);
-
-    Future.delayed(const Duration(milliseconds: 3500), () {
-      if (overlayEntry.mounted) {
-        overlayEntry.remove();
-      }
-    });
   }
 
   void _handleScroll(ScrollNotification notification) {
@@ -1515,7 +1402,7 @@ class _MainContainerState extends State<MainContainer>
     if (index == 1 && prevIndex != 1) {
       _mapKey.currentState?.onTabActivated();
     }
-    // 返回总览页时自动刷新骑行统计与电量续航
+    // 返回行程页时自动刷新骑行统计与电量续航
     if (index == 0 && prevIndex != 0) {
       _dashboardKey.currentState?.refreshFromExternal();
     }
@@ -1530,7 +1417,6 @@ class _MainContainerState extends State<MainContainer>
 
   @override
   void dispose() {
-    _badgeSub?.cancel();
     _navController.dispose();
     _tabBounceController.dispose();
     super.dispose();
@@ -1554,11 +1440,6 @@ class _MainContainerState extends State<MainContainer>
         key: _mapKey,
         themeMode: widget.themeMode,
         onRideFinished: () => _dashboardKey.currentState?.refreshFromExternal(),
-      ),
-      const GoalPlannerPage(),
-      ArtStudioScreen(
-        nickname: widget.nickname,
-        isMaintValid: widget.isMaintValid,
       ),
     ];
 
@@ -1674,15 +1555,15 @@ class _MainContainerState extends State<MainContainer>
                       minWidth: fullWidth, maxWidth: fullWidth, minHeight: dropSize, maxHeight: dropSize,
                       child: Stack(
                         alignment: Alignment.center,
-                        children: List.generate(4, (index) {
-                          final double step = fullWidth / 4;
-                          final double currentX = (index - 1.5) * step * clampedT;
+                        children: List.generate(2, (index) {
+                          final double step = fullWidth / 2;
+                          final double currentX = (index - 0.5) * step * clampedT;
                           final bool isSelected = _selectedIndex == index;
                           // 当前选中 tab 的弹性缩放
                           final double iconScale = isSelected ? _tabBounceAnimation.value : 1.0;
 
                           return Positioned(
-                            left: (fullWidth / 2) + currentX - 24,
+                            left: (fullWidth / 2) + currentX - 44,
                             child: Opacity(
                               opacity: (clampedT * 5 - 4).clamp(0.0, 1.0),
                               child: GestureDetector(
@@ -1690,8 +1571,8 @@ class _MainContainerState extends State<MainContainer>
                                 child: Transform.scale(
                                   scale: iconScale,
                                   child: Container(
-                                    width: 58,
-                                    height: 58,
+                                    width: 88,
+                                    height: 54,
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(24),
                                       gradient: isSelected
@@ -1786,19 +1667,11 @@ class _TimelineMonth {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int currentYear = DateTime.now().year;
-  List<dynamic> allEntries = [];
+  TripStatsPeriod _period = TripStatsPeriod.week;
+  DateTime _anchorDate = DateTime.now();
+  bool _showSearchBar = false;
   List<dynamic> allTimeEntries = [];
-  List<dynamic> onThisDayEntries = [];
-  List<dynamic> yearlyGoals = [];
   List<dynamic> _searchResults = const [];
-  List<_TimelineMonth> _timelineMonths = const [];
-  double totalDistance = 0.0;
-  int uniquePlacesLength = 0;
-  int activeDaysCount = 0;
-  double longestTripKm = 0.0;
-  double totalCarbonSavedKg = 0.0;
-  Set<int> _expandedMonths = {};
   String _searchQuery = "";
   final TextEditingController _searchController = TextEditingController();
 
@@ -1822,18 +1695,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (hour >= 12 && hour < 14) return "午安";
     if (hour >= 14 && hour < 18) return "下午好";
     if (hour >= 18 && hour < 23) return "晚安";
-    return "深夜了";
+    return "夜深了";
   }
-
-  final List<String> dailyQuotes = [
-    "每一次出发都是新的探索，每一公里都在丈量生活。",
-    "走过的路，看过的风景，最终都会成为更好的自己。",
-    "迎着风骑行，把城市的大街小巷连成自己的地图。",
-    "心之所向，车轮以往，世界在脚下延展。",
-    "这世界的辽阔，由你的轨迹去丈量。",
-    "记忆是一张地图，每个坐标都写着从前。",
-    "风带来的气息，是我们曾经路过的证明。"
-  ];
 
   @override
   void initState() {
@@ -1852,8 +1715,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return entries.where((e) {
       final loc = (e['location'] as String? ?? '').toLowerCase();
       final title = (e['title'] as String? ?? '').toLowerCase();
+      final detail = (e['detail'] as String? ?? '').toLowerCase();
       final tags = ((e['tags'] as List?)?.join(' ') ?? '').toLowerCase();
-      return loc.contains(query) || title.contains(query) || tags.contains(query);
+      return loc.contains(query) ||
+          title.contains(query) ||
+          detail.contains(query) ||
+          tags.contains(query);
     }).toList(growable: false);
   }
 
@@ -1861,7 +1728,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     const channel = MethodChannel('com.footprint/data');
     try {
       final jsonStr = await channel.invokeMethod<String>('getAllEntries');
-      final goalsJsonStr = await channel.invokeMethod<String>('getAllGoals');
 
       EbikeConfig loadedEbikeConfig = _ebikeConfig;
       bool trackingNow = false;
@@ -1875,20 +1741,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           trackingNow = jsonDecode(trackStateJson)['isTracking'] == true;
         }
       } catch (_) {}
-
-      List<dynamic> yGoals = [];
-      if (goalsJsonStr != null) {
-        final List<dynamic> allGoals = jsonDecode(goalsJsonStr);
-        yGoals = allGoals.where((g) {
-          final dateStr = g['targetDate'] as String?;
-          if (dateStr != null && dateStr.length >= 4) {
-             final y = int.tryParse(dateStr.substring(0,4));
-             return y == currentYear;
-          }
-          return false;
-        }).toList();
-        yGoals.sort((a,b) => (a['targetDate'] ?? '').compareTo(b['targetDate'] ?? ''));
-      }
 
       if (jsonStr != null) {
         if (!mounted) return;
@@ -1924,79 +1776,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           }
         }
 
-        List<dynamic> onThisDay = [];
-
-        final yearEntries = entries.where((e) {
-          final dateStr = e['happenedOn'] as String?;
-          if (dateStr != null && dateStr.length >= 10) {
-            final parts = dateStr.split('-');
-            final y = int.tryParse(parts[0]);
-            final m = int.tryParse(parts[1]);
-            final d = int.tryParse(parts[2].substring(0, 2));
-            if (y != null && y < today.year && m == today.month && d == today.day) {
-              onThisDay.add(e);
-            }
-            return y == currentYear;
-          }
-          return false;
-        }).toList();
-        
-        // Sort chronologically (newest first, then highest ID first if on same day)
-        yearEntries.sort((a,b) {
-          int cmp = (b['happenedOn'] ?? '').compareTo(a['happenedOn'] ?? '');
-          if (cmp != 0) return cmp;
-          return (b['id'] as int? ?? 0).compareTo(a['id'] as int? ?? 0);
-        });
-
-        double dist = 0.0;
-        double longest = 0.0;
-        double carbonSum = 0.0;
-        final places = <String>{};
-        final activeDays = <String>{};
-
-        for (var e in yearEntries) {
-          final dKm = (e['distanceKm'] as num?)?.toDouble() ?? 0.0;
-          dist += dKm;
-          if (dKm > longest) longest = dKm;
-          final cKg = (e['carbonSavedKg'] as num?)?.toDouble() ??
-              (e['carbonSaved'] as num?)?.toDouble() ??
-              0.0;
-          carbonSum += cKg > 0 ? cKg : (dKm * 0.14);
-          final String? loc = e['location'];
-          if (loc != null && loc.isNotEmpty) places.add(loc);
-          final dateStr = e['happenedOn'] as String?;
-          if (dateStr != null && dateStr.length >= 10) {
-            activeDays.add(dateStr.substring(0, 10));
-          }
-        }
-
-        final groupedByMonth = <int, List<dynamic>>{};
-        for (final entry in yearEntries) {
-          final dateStr = entry['happenedOn'] as String?;
-          if (dateStr != null && dateStr.length >= 7) {
-            final month = int.tryParse(dateStr.split('-')[1]) ?? 1;
-            groupedByMonth.putIfAbsent(month, () => []).add(entry);
-          }
-        }
-        final timelineMonths =
-            (groupedByMonth.keys.toList()..sort((a, b) => b.compareTo(a)))
-                .map((month) => _TimelineMonth(month: month, entries: groupedByMonth[month]!))
-                .toList(growable: false);
-
         final searchResults = _buildSearchResults(entries, _searchQuery);
 
         setState(() {
           allTimeEntries = entries;
-          allEntries = yearEntries;
-          onThisDayEntries = onThisDay;
-          yearlyGoals = yGoals;
-          _timelineMonths = timelineMonths;
           _searchResults = searchResults;
-          totalDistance = dist;
-          uniquePlacesLength = places.length;
-          activeDaysCount = activeDays.length;
-          longestTripKm = longest;
-          totalCarbonSavedKg = carbonSum;
           _ebikeConfig = loadedEbikeConfig;
           _todayRideKm = todayKm;
           _weekRideKm = weekKm;
@@ -2054,19 +1838,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
   }
 
-  IconData _getAvatarIcon(String id) {
-    switch (id) {
-      case "avatar_2":
-        return Icons.account_circle;
-      case "avatar_3":
-        return Icons.smart_toy;
-      case "avatar_4":
-        return Icons.fingerprint;
-      default:
-        return Icons.face;
-    }
-  }
-
   Future<void> _showDetail(dynamic entryData) async {
     final result = await Navigator.push(
       context,
@@ -2077,96 +1848,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _showStatDetail(BuildContext context, String title, String type, List<dynamic> entriesToList) {
-    showModalBottomSheet(
+  Future<bool> _confirmAndDeleteEntry(dynamic entry) async {
+    final id = (entry['id'] as num?)?.toInt();
+    if (id == null) return false;
+    final title = (entry['title'] as String?) ?? '这条行程';
+    final distKm = (entry['distanceKm'] as num?)?.toDouble() ?? 0.0;
+    final confirmed = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        return DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
-          builder: (_, controller) {
-            return Container(
-              decoration: BoxDecoration(
-                color: cs.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: Column(
-                children: [
-                   Padding(
-                     padding: const EdgeInsets.all(16.0),
-                     child: Text(title, style: TextStyle(color: cs.primary, fontSize: 18, fontWeight: FontWeight.bold)),
-                   ),
-                   const Divider(),
-                   Expanded(
-                     child: entriesToList.isEmpty
-                       ? Center(child: Text("暂无记录", style: TextStyle(color: cs.outline)))
-                       : ListView.builder(
-                       controller: controller,
-                       itemCount: entriesToList.length,
-                       itemBuilder: (context, index) {
-                         final entry = entriesToList[index];
-                         final eDate = entry['happenedOn'] ?? '';
-                         switch (type) {
-                           case 'distance':
-                             final dist = (entry['distanceKm'] as num?)?.toDouble() ?? 0.0;
-                             return ListTile(
-                               leading: Icon(Icons.straighten, color: cs.primary),
-                               title: Text(eDate),
-                               subtitle: Text(entry['title'] ?? '未知足迹'),
-                               trailing: Text("${dist.toStringAsFixed(3)} km", style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold, fontSize: 12)),
-                               onTap: () { Navigator.pop(context); _showDetail(entry); },
-                             );
-                           case 'location':
-                             return ListTile(
-                               leading: Icon(Icons.location_on, color: cs.primary),
-                               title: Text(eDate),
-                               subtitle: Builder(builder: (context) {
-                                 String loc = entry['location'] ?? '未知地点';
-                                 final coordRegex = RegExp(r'(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)');
-                                 final match = coordRegex.firstMatch(loc);
-                                 if (match != null) {
-                                   try {
-                                     double lat = double.parse(match.group(1)!);
-                                     double lng = double.parse(match.group(2)!);
-                                     loc = "${lat.toStringAsFixed(3)}, ${lng.toStringAsFixed(3)}";
-                                   } catch (_) {}
-                                 }
-                                 return Text(loc, maxLines: 2, overflow: TextOverflow.ellipsis);
-                               }),
-                               onTap: () { Navigator.pop(context); _showDetail(entry); },
-                             );
-                           case 'energy':
-                             final energy = (entry['energyLevel'] as num?)?.toInt() ?? 0;
-                             return ListTile(
-                               leading: Icon(Icons.bolt, color: Colors.amber),
-                               title: Text(eDate),
-                               subtitle: Text(entry['title'] ?? '未知足迹'),
-                               trailing: Row(mainAxisSize: MainAxisSize.min, children: List.generate(5, (i) => Icon(i < energy ? Icons.star : Icons.star_border, size: 14, color: i < energy ? Colors.amber : cs.outline))),
-                               onTap: () { Navigator.pop(context); _showDetail(entry); },
-                             );
-                           default:
-                             return ListTile(
-                               leading: Icon(Icons.place, color: cs.primary),
-                               title: Text(entry['title'] ?? '未知足迹'),
-                               subtitle: Text("$eDate · ${entry['location'] ?? '未知地点'}"),
-                               trailing: Text("${(entry['distanceKm'] as num?)?.toDouble().toStringAsFixed(3) ?? '0'} km", style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold)),
-                               onTap: () { Navigator.pop(context); _showDetail(entry); },
-                             );
-                         }
-                       },
-                     ),
-                   ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除行程记录'),
+        content: Text('确定要删除「$title」(${distKm.toStringAsFixed(1)} km) 吗？删除后无法恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
     );
+    if (confirmed != true) return false;
+
+    const channel = MethodChannel('com.footprint/data');
+    try {
+      await channel.invokeMethod('deleteFootprint', id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已删除行程记录')),
+        );
+      }
+      await _loadEntries();
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e')),
+        );
+      }
+      return false;
+    }
   }
 
   @override
@@ -2174,7 +1898,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final todayHint = getEternalTodayBannerText();
+    final summary = computeTripPeriodSummary(allTimeEntries, _period, _anchorDate);
+    final topPadding = MediaQuery.of(context).padding.top + (_showSearchBar ? 132.0 : 76.0);
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -2187,45 +1913,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   end: Alignment.bottomCenter,
                   colors: [
                     isDark
-                        ? Color.alphaBlend(cs.primary.withOpacity(0.06), Theme.of(context).scaffoldBackgroundColor)
-                        : Color.alphaBlend(cs.primary.withOpacity(0.04), Colors.white),
+                        ? Color.alphaBlend(cs.primary.withValues(alpha: 0.06), Theme.of(context).scaffoldBackgroundColor)
+                        : Color.alphaBlend(cs.primary.withValues(alpha: 0.04), Colors.white),
                     Theme.of(context).scaffoldBackgroundColor,
-                    Color.alphaBlend(cs.secondary.withOpacity(isDark ? 0.05 : 0.08), Theme.of(context).scaffoldBackgroundColor),
+                    Color.alphaBlend(cs.secondary.withValues(alpha: isDark ? 0.05 : 0.08), Theme.of(context).scaffoldBackgroundColor),
                   ],
                 ),
               ),
             ),
           ),
-          Positioned(
-            top: -90,
-            left: -60,
-            child: Container(
-              width: 220,
-              height: 220,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: (isDark ? cs.secondaryContainer : cs.secondaryContainer)
-                    .withOpacity(isDark ? 0.12 : 0.38),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 120,
-            right: -80,
-            child: Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: (isDark ? cs.primaryContainer : cs.primaryContainer)
-                    .withOpacity(isDark ? 0.16 : 0.5),
-              ),
-            ),
-          ),
           ListView(
-            padding: const EdgeInsets.only(
-              top: 190,
-              bottom: 150,
+            padding: EdgeInsets.only(
+              top: topPadding,
+              bottom: 130,
               left: 16,
               right: 16,
             ),
@@ -2243,394 +1943,75 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onOpenSettings: _handleOpenEbikeSettings,
                 onOpenKeepAliveCheck: () => showBackgroundKeepAliveDialog(context),
               ),
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.chevron_left),
-                    onPressed: () {
-                      setState(() { currentYear--; _loadEntries(); });
-                    },
-                  ),
-                  Text(
-                    '$currentYear',
-                    style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.chevron_right),
-                    onPressed: () {
-                      setState(() { currentYear++; _loadEntries(); });
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                "年度数据总览",
-                style: TextStyle(
-                  color: cs.primary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Column(
-                children: [
-                  Row(
-                    children: [
-                      _sBox(cs, tt, "足迹", "${allEntries.length}", onTap: () => _showStatDetail(context, "所有足迹 (${allEntries.length})", "footprint", allEntries)),
-                      const SizedBox(width: 8),
-                      _sBox(cs, tt, "里程", totalDistance.toStringAsFixed(1), u: "km", onTap: () {
-                        final sorted = List.of(allEntries)..sort((a,b) => ((b['distanceKm'] as num?)?.toDouble() ?? 0.0).compareTo((a['distanceKm'] as num?)?.toDouble() ?? 0.0));
-                        _showStatDetail(context, "年度总里程 (${totalDistance.toStringAsFixed(1)} km)", "distance", sorted);
-                      }),
-                      const SizedBox(width: 8),
-                      _sBox(cs, tt, "地点", "$uniquePlacesLength", onTap: () {
-                        final seen = <String>{};
-                        final unique = allEntries.where((e) {
-                          final loc = e['location'] as String? ?? '';
-                          if (seen.contains(loc) || loc.isEmpty) return false;
-                          seen.add(loc);
-                          return true;
-                        }).toList();
-                        _showStatDetail(context, "探索地点 ($uniquePlacesLength)", "location", unique);
-                      }),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _sBox(cs, tt, "活跃天", "$activeDaysCount", u: "天", onTap: () => _showStatDetail(context, "本年出行记录 (${allEntries.length})", "footprint", allEntries)),
-                      const SizedBox(width: 8),
-                      _sBox(cs, tt, "单次最长", longestTripKm.toStringAsFixed(1), u: "km", onTap: () {
-                        final sorted = List.of(allEntries)..sort((a,b) => ((b['distanceKm'] as num?)?.toDouble() ?? 0.0).compareTo((a['distanceKm'] as num?)?.toDouble() ?? 0.0));
-                        _showStatDetail(context, "单次里程排行", "distance", sorted);
-                      }),
-                      const SizedBox(width: 8),
-                      _sBox(cs, tt, "绿色减碳", totalCarbonSavedKg.toStringAsFixed(1), u: "kg", onTap: () {
-                        final sorted = List.of(allEntries)..sort((a,b) => ((b['distanceKm'] as num?)?.toDouble() ?? 0.0).compareTo((a['distanceKm'] as num?)?.toDouble() ?? 0.0));
-                        _showStatDetail(context, "年度减碳贡献 (${totalCarbonSavedKg.toStringAsFixed(1)} kg)", "distance", sorted);
-                      }),
-                    ],
-                  ),
-                ],
+              const SizedBox(height: 16),
+              PeriodTripStatsCard(
+                summary: summary,
+                onPeriodChanged: (p) => setState(() {
+                  _period = p;
+                  _anchorDate = DateTime.now();
+                }),
+                onShiftAnchor: (delta) => setState(() {
+                  _anchorDate = shiftTripAnchor(_anchorDate, _period, delta);
+                }),
+                onResetToToday: () => setState(() {
+                  _anchorDate = DateTime.now();
+                }),
               ),
               const SizedBox(height: 20),
-              Card(
-                elevation: 0,
-                 shape: RoundedRectangleBorder(
-                   borderRadius: BorderRadius.circular(24),
-                   side: BorderSide(color: cs.outlineVariant),
-                 ),
-                 child: Padding(
-                   padding: const EdgeInsets.all(16),
-                   child: Column(
-                     crossAxisAlignment: CrossAxisAlignment.start,
-                     children: [
-                       Row(
-                         children: [
-                           Icon(Icons.auto_awesome, color: cs.primary, size: 18),
-                           const SizedBox(width: 8),
-                           Text(
-                             "时光碎片",
-                             style: TextStyle(
-                               color: cs.primary,
-                               fontWeight: FontWeight.bold,
-                               fontSize: 13,
-                             ),
-                           ),
-                         ],
-                       ),
-                       const SizedBox(height: 8),
-                       Text(
-                         dailyQuotes[DateTime.now().day % dailyQuotes.length],
-                         style: TextStyle(
-                           color: cs.outline,
-                           fontStyle: FontStyle.italic,
-                           fontSize: 12,
-                         ),
-                       ),
-                       const SizedBox(height: 16),
-                       if (onThisDayEntries.isEmpty)
-                         Text(
-                           "往年的今天暂时没有足迹记录。",
-                           style: TextStyle(color: cs.outline, fontSize: 13),
-                         ),
-                       ...onThisDayEntries.map((e) {
-                         int pastYear = int.tryParse(e['happenedOn']?.toString().split('-')[0] ?? '0') ?? 0;
-                         String yearDiff = (DateTime.now().year - pastYear).toString();
-                         final eDist = (e['distanceKm'] as num?)?.toDouble() ?? 0.0;
-                         return Padding(
-                           padding: const EdgeInsets.only(bottom: 12),
-                           child: InkWell(
-                             onTap: () => _showDetail(e),
-                             child: Row(
-                               children: [
-                                 Container(
-                                   width: 56,
-                                   height: 56,
-                                   decoration: BoxDecoration(
-                                     color: Colors.orange.withValues(alpha: 0.2),
-                                     borderRadius: BorderRadius.circular(12),
-                                   ),
-                                   child: const Icon(
-                                     Icons.route,
-                                     color: Colors.orange,
-                                     size: 30,
-                                   ),
-                                 ),
-                                 const SizedBox(width: 16),
-                                 Expanded(
-                                   child: Column(
-                                     crossAxisAlignment: CrossAxisAlignment.start,
-                                     children: [
-                                       Text(
-                                         e['title'] ?? '未知足迹',
-                                         style: const TextStyle(
-                                           fontWeight: FontWeight.bold,
-                                           fontSize: 16,
-                                         ),
-                                       ),
-                                       Text(
-                                         '$yearDiff年前 · ${eDist.toStringAsFixed(1)} km',
-                                         style: TextStyle(
-                                           color: cs.outline,
-                                           fontSize: 12,
-                                         ),
-                                       ),
-                                     ],
-                                   ),
-                                 ),
-                               ],
-                             ),
-                           ),
-                         );
-                       }),
-                     ],
-                   ),
-                 ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  side: BorderSide(color: cs.outlineVariant),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.flag, color: cs.secondary, size: 18),
-                          const SizedBox(width: 8),
-                          Text(
-                            "$currentYear 年度旅行目标",
-                            style: TextStyle(
-                              color: cs.secondary,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      if (yearlyGoals.isEmpty)
-                        Text(
-                          "暂无年度计划，去添加一个吧！",
-                          style: TextStyle(color: cs.outline, fontSize: 13),
-                        ),
-                      ...yearlyGoals.map((g) {
-                        final isCompleted = g['isCompleted'] == true;
-                        final dateStr = g['targetDate'] ?? '';
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: InkWell(
-                            onTap: () {
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => const GoalPlannerPage()))
-                                .then((_) => _loadEntries());
-                            },
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: isCompleted ? cs.secondary : cs.secondaryContainer.withValues(alpha: 0.4),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    isCompleted ? Icons.check : Icons.flag,
-                                    color: isCompleted ? Colors.white : cs.secondary,
-                                    size: 18,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        g['title'] ?? '未命名目标',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: cs.onSurface,
-                                        ),
-                                      ),
-                                      Text(
-                                        "${g['targetLocation'] ?? '未知位置'} · $dateStr",
-                                        style: TextStyle(
-                                          color: cs.onSurfaceVariant,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  side: BorderSide(color: cs.outlineVariant),
-                ),
-                child: ListTile(
-                  leading: Icon(Icons.history, color: cs.primary),
-                  title: const Text(
-                    '时光足迹回放',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: const Text(
-                    '查看历史移动轨迹与时空分布',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  trailing: const Icon(Icons.keyboard_arrow_right),
-                  onTap: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const TimeFootprintPlaybackPage()));
-                  },
-                ),
-              ),
-              const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: cs.outlineVariant),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.route, color: cs.primary, size: 16),
-                        const SizedBox(width: 6),
-                        Text(
-                          "年度足迹轨迹",
-                          style: TextStyle(
-                            color: cs.primary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                  Row(
+                    children: [
+                      Icon(Icons.route, color: cs.primary, size: 17),
+                      const SizedBox(width: 6),
+                      Text(
+                        '行程明细 (${summary.entries.length})',
+                        style: TextStyle(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  InkWell(
-                    onTap: () {
+                  TextButton.icon(
+                    onPressed: () {
                       if (widget.hapticEnabled) HapticFeedback.mediumImpact();
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => const AddFootprintPage()),
                       ).then((_) => widget.onSettingsChanged());
                     },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: cs.outlineVariant),
-                      ),
-                      child: Text(
-                        "新建 +",
-                        style: TextStyle(
-                          color: cs.primary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('补录', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              ..._buildTimeline(cs),
+              const SizedBox(height: 8),
+              ..._buildPeriodEntryList(cs, summary.entries),
             ],
           ),
           if (_searchQuery.isNotEmpty)
             Positioned.fill(
-              top: 180,
+              top: MediaQuery.of(context).padding.top + 124,
               child: Container(
                 color: cs.surface,
                 child: ListView(
                   padding: const EdgeInsets.all(16).copyWith(bottom: 120),
                   children: [
-                    Text("搜索结果", style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold, fontSize: 13)),
+                    Text(
+                      "搜索结果 (${_searchResults.length})",
+                      style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
                     const SizedBox(height: 12),
-                    ..._searchResults.map((e) => Card(
-                      elevation: 0,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: cs.outlineVariant)),
-                      child: ListTile(
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(color: cs.primaryContainer, shape: BoxShape.circle),
-                          child: Icon(Icons.place, color: cs.primary, size: 20),
-                        ),
-                        title: Text(e['title'] ?? '未知记录', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Builder(builder: (context) {
-                          String loc = e['location'] ?? '';
-                          final coordRegex = RegExp(r'(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)');
-                          final match = coordRegex.firstMatch(loc);
-                          if (match != null) {
-                            try {
-                              double lat = double.parse(match.group(1)!);
-                              double lng = double.parse(match.group(2)!);
-                              loc = "${lat.toStringAsFixed(3)}, ${lng.toStringAsFixed(3)}";
-                            } catch (_) {}
-                          }
-                          return Text(loc);
-                        }),
-                        trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                        onTap: () {
-                           FocusScope.of(context).unfocus();
-                           _showDetail(e);
-                        },
-                      ),
-                    )),
+                    ..._searchResults.map((e) => _buildTripItemCard(cs, e)),
                     if (_searchResults.isEmpty)
                       const Padding(
                         padding: EdgeInsets.only(top: 32),
-                        child: Center(child: Text("没有找到匹配的足迹", style: TextStyle(color: Colors.grey))),
-                      )
+                        child: Center(child: Text("没有找到匹配的行程", style: TextStyle(color: Colors.grey))),
+                      ),
                   ],
                 ),
               ),
@@ -2638,509 +2019,260 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _fixedTop(cs, tt),
         ],
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 110),
-        child: FloatingActionButton(
-          onPressed: () {
-            if (widget.hapticEnabled) HapticFeedback.mediumImpact();
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const AddFootprintPage()),
-            ).then((_) => widget.onSettingsChanged()); // Refresh data
-          },
-          backgroundColor: cs.primary,
-          child: const Icon(Icons.add, color: Colors.white, size: 32),
-        ),
-      ),
     );
   }
 
-  Widget _sBox(ColorScheme cs, TextTheme tt, String l, String v, {String? u, VoidCallback? onTap}) =>
-      Expanded(
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        v,
-                        style: tt.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      if (u != null)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 2),
-                          child: Text(u, style: tt.labelSmall),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(l, style: tt.labelSmall?.copyWith(color: cs.outline)),
-                ],
-              ),
-            ),
+  List<Widget> _buildPeriodEntryList(ColorScheme cs, List<dynamic> entries) {
+    if (entries.isEmpty) {
+      return [
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 36),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
+          ),
+          child: Column(
+            children: [
+              Icon(Icons.electric_scooter_outlined, size: 32, color: cs.outline),
+              const SizedBox(height: 8),
+              Text('该时间段暂无行程记录', style: TextStyle(color: cs.outline, fontSize: 13)),
+            ],
           ),
         ),
-      );
-
-  // Custom timeline renderer grouping by month
-  List<Widget> _buildTimeline(ColorScheme cs) {
-    if (_timelineMonths.isEmpty) {
-      return [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 32),
-          child: Center(
-            child: Text("此年份暂无足迹记录", style: TextStyle(color: cs.outline)),
-          ),
-        )
       ];
     }
 
-    return _timelineMonths.map((bucket) {
-      final month = bucket.month;
-      final isExpanded = _expandedMonths.contains(month);
-      final monthEntries = bucket.entries;
-      
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: () {
-              setState(() {
-                if (isExpanded) _expandedMonths.remove(month);
-                else _expandedMonths.add(month);
-              });
-            },
-            borderRadius: BorderRadius.circular(8),
+    return entries.map((entry) => _buildTripItemCard(cs, entry)).toList();
+  }
+
+  Widget _buildTripItemCard(ColorScheme cs, dynamic entry) {
+    final String dateStr = entry['happenedOn'] ?? '';
+    final String displayDate = dateStr.length >= 10 ? dateStr.substring(5, 10) : dateStr;
+    final transportStr = (entry['transportType'] ?? '').toString().toUpperCase();
+    final IconData iconData = transportDisplayIcon(transportStr);
+    final dist = (entry['distanceKm'] as num?)?.toDouble() ?? 0.0;
+    final durSec = (entry['durationSec'] as num?)?.toInt() ?? 0;
+    final avgSpd = (entry['avgSpeedKmh'] as num?)?.toDouble() ?? 0.0;
+
+    String loc = (entry['location'] ?? '未知地点').toString();
+    final coordRegex = RegExp(r'(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)');
+    final match = coordRegex.firstMatch(loc);
+    if (match != null) {
+      try {
+        final lat = double.parse(match.group(1)!);
+        final lng = double.parse(match.group(2)!);
+        loc = '${lat.toStringAsFixed(3)}, ${lng.toStringAsFixed(3)}';
+      } catch (_) {}
+    }
+
+    final metaParts = <String>[displayDate, loc];
+    if (durSec > 0) metaParts.add(formatCompactDuration(durSec));
+    if (avgSpd > 0.5) metaParts.add('均速 ${avgSpd.toStringAsFixed(0)}km/h');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Dismissible(
+        key: ValueKey('trip_${entry['id']}_${dateStr}_${dist}'),
+        direction: DismissDirection.endToStart,
+        confirmDismiss: (_) => _confirmAndDeleteEntry(entry),
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          decoration: BoxDecoration(
+            color: Colors.redAccent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Icon(Icons.delete_outline, color: Colors.white),
+        ),
+        child: InkWell(
+          onTap: () => _showDetail(entry),
+          borderRadius: BorderRadius.circular(18),
+          child: Card(
+            elevation: 0,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
+            ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               child: Row(
                 children: [
-                  Text("$month 月", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: cs.primary)),
-                  const Spacer(),
-                  Text("${monthEntries.length} 篇", style: TextStyle(color: cs.outline, fontSize: 12)),
-                  Icon(isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: cs.outline, size: 20),
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: cs.primaryContainer,
+                    child: Icon(iconData, color: cs.onPrimaryContainer, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry['title'] ?? '未命名行程',
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          metaParts.join(' · '),
+                          style: TextStyle(fontSize: 11, color: cs.outline),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${dist.toStringAsFixed(1)} km',
+                        style: TextStyle(
+                          color: cs.primary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, size: 16, color: cs.outline),
+                    ],
+                  ),
                 ],
               ),
             ),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 800),
-            curve: Curves.elasticOut,
-            child: isExpanded
-                ? Column(
-                    children: monthEntries.map((entry) {
-                      final String dateStr = entry['happenedOn'] ?? '';
-                      final fragments = dateStr.split('-');
-                      final String displayDate = fragments.length >= 3
-                          ? "${fragments[1]}-${fragments[2].substring(0, 2)}"
-                          : dateStr;
-
-                      String? thumbPath;
-                      final photos = entry['photoPaths'] as List<dynamic>?;
-                      if (photos != null &&
-                          photos.isNotEmpty &&
-                          photos[0] is String) {
-                        thumbPath = photos[0];
-                      }
-
-                      final iconStr = entry['icon'] as String? ?? '';
-                      final transportStr = (entry['transportType'] ?? '').toString();
-                      IconData iconData = transportStr == 'EBIKE'
-                          ? Icons.electric_scooter
-                          : Icons.location_on;
-                      switch (iconStr) {
-                        case "ElectricScooter":
-                          iconData = Icons.electric_scooter;
-                          break;
-                        case "DirectionsCar":
-                          iconData = Icons.directions_car;
-                          break;
-                        case "RunCircle":
-                          iconData = Icons.directions_walk;
-                          break;
-                        case "Restaurant":
-                          iconData = Icons.restaurant;
-                          break;
-                        case "LocalCafe":
-                          iconData = Icons.local_cafe;
-                          break;
-                        case "Park":
-                          iconData = Icons.park;
-                          break;
-                        case "Flight":
-                          iconData = Icons.flight;
-                          break;
-                        case "Train":
-                          iconData = Icons.train;
-                          break;
-                        case "DirectionsBike":
-                          iconData = Icons.directions_bike;
-                          break;
-                        case "ShoppingBag":
-                          iconData = Icons.shopping_bag;
-                          break;
-                        case "CameraAlt":
-                          iconData = Icons.camera_alt;
-                          break;
-                      }
-
-                      final dist =
-                          (entry['distanceKm'] as num?)?.toDouble() ?? 0.0;
-                      final rDist = dist.toStringAsFixed(1);
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12, left: 8),
-                        child: InkWell(
-                          onTap: () => _showDetail(entry),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Card(
-                            elevation: 0,
-                            margin: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(
-                                  color: cs.outlineVariant
-                                      .withValues(alpha: 0.5)),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    backgroundColor: cs.primaryContainer,
-                                    child: Icon(iconData,
-                                        color: cs.onPrimaryContainer, size: 20),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          entry['title'] ?? '未知足迹',
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold),
-                                          maxLines: 3,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Builder(builder: (context) {
-                                          String loc =
-                                              entry['location'] ?? '未知地点';
-                                          final coordRegex = RegExp(
-                                              r'(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)');
-                                          final match =
-                                              coordRegex.firstMatch(loc);
-                                          if (match != null) {
-                                            try {
-                                              double lat =
-                                                  double.parse(match.group(1)!);
-                                              double lng =
-                                                  double.parse(match.group(2)!);
-                                              loc =
-                                                  "${lat.toStringAsFixed(3)}, ${lng.toStringAsFixed(3)}";
-                                            } catch (_) {}
-                                          }
-                                          return Text(
-                                            '$displayDate · $loc',
-                                            style:
-                                                const TextStyle(fontSize: 12),
-                                          );
-                                        }),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  if (thumbPath != null)
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.file(
-                                        File(thumbPath),
-                                        width: 40,
-                                        height: 40,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (c, e, s) => Icon(
-                                            Icons.image_not_supported,
-                                            size: 40,
-                                            color: cs.outline),
-                                      ),
-                                    )
-                                  else
-                                    Text(
-                                      '$rDist km',
-                                      style: TextStyle(
-                                        color: cs.primary,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  )
-                : const SizedBox(width: double.infinity, height: 0),
-          ),
-          const SizedBox(height: 8),
-        ],
-      );
-    }).toList();
+        ),
+      ),
+    );
   }
 
   Widget _fixedTop(ColorScheme cs, TextTheme tt) => Positioned(
-    top: 0,
-    left: 0,
-    right: 0,
-    child: Container(
-      color: cs.surface.withValues(alpha: 0.95),
-      padding: const EdgeInsets.only(top: 48, bottom: 12, left: 16, right: 16),
-      child: Column(
-        children: [
-          Row(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: Container(
+          color: cs.surface.withValues(alpha: 0.94),
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 8,
+            bottom: 10,
+            left: 16,
+            right: 12,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              buildAvatar(widget.avatarId, radius: 24, bgColor: cs.primaryContainer, fgColor: cs.onPrimaryContainer),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${_getGreeting()}, ${widget.nickname}',
-                      style: tt.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: cs.primary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Row(
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.explore, size: 12, color: cs.secondary),
-                        const SizedBox(width: 4),
                         Text(
-                          '进阶探索者',
+                          '${_getGreeting()} · 行程记录',
+                          style: tt.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: cs.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '今日已骑 ${_todayRideKm.toStringAsFixed(1)} km · 共 ${allTimeEntries.length} 条行程',
                           style: TextStyle(
-                            fontSize: 12,
-                            color: cs.secondary,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                            color: cs.outline,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: Icon(Icons.military_tech, color: cs.primary),
-                tooltip: "荣誉勋章",
-                onPressed: () async {
-                  if (widget.hapticEnabled) HapticFeedback.mediumImpact();
-                  try {
-                    const channel = MethodChannel('com.footprint/data');
-                    final idsStr = await channel.invokeMethod<String>('getUnlockedBadgeIds');
-                    final dictStr = await channel.invokeMethod<String>('getBadgeDictionary');
-                    if (idsStr != null && dictStr != null && mounted) {
-                        List<String> unlockedIds = List<String>.from(jsonDecode(idsStr));
-                        final List<dynamic> rawList = jsonDecode(dictStr);
-                        
-                        // Group by category for the BadgeHallScreen's expected format
-                        final Map<String, List<dynamic>> dict = {};
-                        for (var item in rawList) {
-                            final cat = item['category'] ?? 'Other';
-                            dict.putIfAbsent(cat, () => []).add(item);
-                        }
-
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => BadgeHallScreen(badgeDictionary: dict, unlockedIds: unlockedIds)));
-                    }
-                  } catch (e) {
-                    debugPrint("Badge screen error: $e");
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("无法打开勋章馆: $e"), backgroundColor: Theme.of(context).colorScheme.error),
-                      );
-                    }
-                  }
-                },
-              ),
-              PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, color: cs.onSurface),
-                onSelected: (value) {
-                  if (value == 'settings') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => SettingsScreen(
-                          nickname: widget.nickname,
-                          avatarId: widget.avatarId,
-                          themeMode: widget.themeMode,
-                          themeStyle: widget.themeStyle,
-                          hapticEnabled: widget.hapticEnabled,
-                          isMaintValid: widget.isMaintValid,
-                          onUpdate: widget.onSettingsChanged,
-                        ),
-                      ),
-                    );
-                  } else if (value == 'about') {
-                    _showAboutDialog(context);
-                  }
-                },
-                color: cs.surface,
-                surfaceTintColor: Colors.transparent,
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'settings',
-                    child: Row(
-                      children: [
-                        Icon(Icons.settings, size: 20, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 12),
-                        Text("设置", style: TextStyle(color: cs.onSurface)),
-                      ],
-                    ),
                   ),
-                  PopupMenuItem(
-                    value: 'about',
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline, size: 20, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 12),
-                        Text("关于", style: TextStyle(color: cs.onSurface)),
-                      ],
+                  IconButton(
+                    tooltip: '搜索行程',
+                    icon: Icon(
+                      _showSearchBar ? Icons.search_off_rounded : Icons.search_rounded,
+                      color: _showSearchBar ? cs.primary : cs.onSurfaceVariant,
                     ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _searchController,
-            onChanged: (val) {
-              final query = val.trim().toLowerCase();
-              setState(() {
-                _searchQuery = query;
-                _searchResults = _buildSearchResults(allTimeEntries, query);
-              });
-            },
-            decoration: InputDecoration(
-              hintText: '搜索地点、标签...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searchQuery.isNotEmpty 
-                  ? IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () {
-                        setState(() {
+                    onPressed: () {
+                      setState(() {
+                        _showSearchBar = !_showSearchBar;
+                        if (!_showSearchBar) {
                           _searchQuery = "";
                           _searchResults = const [];
                           _searchController.clear();
-                        });
-                        FocusScope.of(context).unfocus();
-                      },
-                    ) 
-                  : null,
-              filled: true,
-              fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+                          FocusScope.of(context).unfocus();
+                        }
+                      });
+                    },
+                  ),
+                  IconButton(
+                    tooltip: '应用设置',
+                    icon: Icon(Icons.settings_outlined, color: cs.onSurfaceVariant),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SettingsScreen(
+                            nickname: widget.nickname,
+                            avatarId: widget.avatarId,
+                            themeMode: widget.themeMode,
+                            themeStyle: widget.themeStyle,
+                            hapticEnabled: widget.hapticEnabled,
+                            isMaintValid: widget.isMaintValid,
+                            onUpdate: widget.onSettingsChanged,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-  void _showAboutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        final isDark = Theme.of(ctx).brightness == Brightness.dark;
-        return AlertDialog(
-          backgroundColor: isDark ? const Color(0xFF1A1A1A) : null,
-          title: const Center(child: Text("关于 Footprint")),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Center(
-                child: Icon(Icons.explore, size: 72, color: Colors.blueAccent),
-              ),
-              const SizedBox(height: 20),
-              const Center(
-                child: Text(
-                  kAppVersionLabel,
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.blueAccent),
+              if (_showSearchBar) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  onChanged: (val) {
+                    final query = val.trim().toLowerCase();
+                    setState(() {
+                      _searchQuery = query;
+                      _searchResults = _buildSearchResults(allTimeEntries, query);
+                    });
+                  },
+                  decoration: InputDecoration(
+                    hintText: '搜索行程名称、地点或备注...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed: () {
+                              setState(() {
+                                _searchQuery = "";
+                                _searchResults = const [];
+                                _searchController.clear();
+                              });
+                              FocusScope.of(context).unfocus();
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.55),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: Text(
-                  "记录足迹，遇见更好的自己。",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Center(
-                child: Text(
-                  "一款基于 Flutter 构建的 Material Design 3 风格足迹探索应用。",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: isDark ? Colors.white60 : Colors.black54),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.person_outline, color: Colors.blueAccent),
-                title: const Text("作者主页", style: TextStyle(fontSize: 14)),
-                subtitle: const Text("StarsUnsurpass", style: TextStyle(fontSize: 12)),
-                onTap: () {
-                  const channel = MethodChannel('com.footprint/data');
-                  channel.invokeMethod('openUrl', "https://github.com/StarsUnsurpass");
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.code),
-                title: const Text("项目源码"),
-                subtitle: const Text("GitHub / Footprint"),
-                onTap: () {
-                  const channel = MethodChannel('com.footprint/data');
-                  channel.invokeMethod('openUrl', "https://github.com/StarsUnsurpass/Footprint");
-                },
-              ),
+              ],
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("关闭"),
-            ),
-          ],
-        );
-      },
-    );
-  }
+        ),
+      );
 }
 
 // --- 探索地图页 (ExploreMapScreen) - 电动车骑行与足迹探索 ---
@@ -3161,6 +2293,8 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   static const dataChannel = MethodChannel('com.footprint/data');
   static const streamChannel = EventChannel('com.footprint/stream');
   String mapMode = 'STANDARD';
+  String _historyTrackScope = 'NONE'; // NONE, TODAY, WEEK, MONTH, ALL
+  String? _lastHistoryScope;
   MethodChannel? _mapChannel;
   List<dynamic> _allEntries = [];
   bool? _lastNativeShowHistory;
@@ -3622,9 +2756,25 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
     );
   }
 
+  int? _scopeStartMs() {
+    if (_historyTrackScope == 'NONE' || _historyTrackScope == 'ALL') return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (_historyTrackScope) {
+      case 'TODAY':
+        return today.millisecondsSinceEpoch;
+      case 'WEEK':
+        return today.subtract(Duration(days: today.weekday - 1)).millisecondsSinceEpoch;
+      case 'MONTH':
+        return DateTime(now.year, now.month, 1).millisecondsSinceEpoch;
+      default:
+        return null;
+    }
+  }
+
   void _updateNativeMap() {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final bool fogEnabled = mapMode == 'FOG' || mapMode == 'ETERNAL_REALM';
+    const bool fogEnabled = false;
     if (_lastNativeThemeIsDark != isDark) {
       _mapChannel?.invokeMethod('setTheme', isDark);
       _lastNativeThemeIsDark = isDark;
@@ -3637,28 +2787,56 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
       _mapChannel?.invokeMethod('setFogEnabled', fogEnabled);
       _lastNativeFogEnabled = fogEnabled;
     }
-    
-    // 用户要求：非追踪状态下且处于标准模式（STANDARD）时，隐藏历史足迹 Marker 和轨迹
-    final bool showHistory = mapMode != 'STANDARD' || _isTracking;
-    final entriesHash = Object.hash(_allEntries.length, _allEntries.isNotEmpty ? _allEntries.last['id'] : null);
-    final capsulesHash = Object.hash(_capsules.length, _capsules.isNotEmpty ? _capsules.last['id'] : null);
-    final fogHash = Object.hash(
-      _fogPoints.length,
-      _fogPoints.isNotEmpty ? _fogPoints.first['timestamp'] : null,
-      _fogPoints.isNotEmpty ? _fogPoints.last['timestamp'] : null,
+
+    final bool showHistory = _historyTrackScope != 'NONE';
+    final int? startMs = _scopeStartMs();
+    final List<dynamic> scopedPoints = !showHistory
+        ? const []
+        : (startMs == null
+            ? _fogPoints
+            : _fogPoints
+                .where((p) => ((p['timestamp'] as num?)?.toInt() ?? 0) >= startMs)
+                .toList(growable: false));
+    final List<dynamic> scopedEntries = !showHistory
+        ? const []
+        : (startMs == null
+            ? _allEntries
+            : _allEntries.where((e) {
+                final raw = e['happenedOn']?.toString();
+                if (raw != null && raw.length >= 10) {
+                  final dt = DateTime.tryParse(raw.substring(0, 10));
+                  if (dt != null) return dt.millisecondsSinceEpoch >= startMs;
+                }
+                return ((e['timestamp'] as num?)?.toInt() ?? 0) >= startMs;
+              }).toList(growable: false));
+
+    final entriesHash = Object.hash(
+      _historyTrackScope,
+      scopedEntries.length,
+      scopedEntries.isNotEmpty ? scopedEntries.last['id'] : null,
     );
-    
+    final fogHash = Object.hash(
+      _historyTrackScope,
+      scopedPoints.length,
+      scopedPoints.isNotEmpty ? scopedPoints.first['timestamp'] : null,
+      scopedPoints.isNotEmpty ? scopedPoints.last['timestamp'] : null,
+    );
+
     if (showHistory) {
-      if (_lastNativeShowHistory != true || _lastNativeEntriesHash != entriesHash) {
-        _mapChannel?.invokeMethod('setEntries', _allEntries);
+      if (_lastNativeShowHistory != true ||
+          _lastHistoryScope != _historyTrackScope ||
+          _lastNativeEntriesHash != entriesHash) {
+        _mapChannel?.invokeMethod('setEntries', scopedEntries);
         _lastNativeEntriesHash = entriesHash;
       }
-      if (_lastNativeShowHistory != true || _lastNativeCapsulesHash != capsulesHash) {
-        _mapChannel?.invokeMethod('setCapsules', _capsules);
-        _lastNativeCapsulesHash = capsulesHash;
+      if (_lastNativeShowHistory != true) {
+        _mapChannel?.invokeMethod('setCapsules', []);
+        _lastNativeCapsulesHash = 0;
       }
-      if (_lastNativeShowHistory != true || _lastNativeFogHash != fogHash) {
-        _mapChannel?.invokeMethod('setHistoryPoints', _fogPoints);
+      if (_lastNativeShowHistory != true ||
+          _lastHistoryScope != _historyTrackScope ||
+          _lastNativeFogHash != fogHash) {
+        _mapChannel?.invokeMethod('setHistoryPoints', scopedPoints);
         _lastNativeFogHash = fogHash;
       }
     } else {
@@ -3672,6 +2850,7 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
       }
     }
     _lastNativeShowHistory = showHistory;
+    _lastHistoryScope = _historyTrackScope;
   }
 
   // === 定位按钮：直接使用原生地图的位置居中 ===
@@ -4021,18 +3200,110 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
             top: topInset + 12,
             left: 16,
             right: 16,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 左侧：标准模式 & 爱车/骑行状态胶囊
-                Flexible(
-                  child: GestureDetector(
-                    onTap: _isTracking
-                        ? () => setState(() => _isFullScreenHud = true)
-                        : _handleLocateMe,
-                    child: Container(
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // 左侧：标准模式 & 爱车/骑行状态胶囊
+                    Flexible(
+                      child: GestureDetector(
+                        onTap: _isTracking
+                            ? () => setState(() => _isFullScreenHud = true)
+                            : _handleLocateMe,
+                        child: Container(
+                          height: 42,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(
+                            color: surfaceGlass,
+                            borderRadius: BorderRadius.circular(21),
+                            border: Border.all(color: borderGlass),
+                            boxShadow: softShadow,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _isTracking
+                                      ? (_isPaused
+                                          ? Colors.orangeAccent
+                                          : const Color(0xFF00C853))
+                                      : cs.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  _isTracking
+                                      ? (_isPaused ? '已暂停记录' : '骑行记录中')
+                                      : '标准地图',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurface,
+                                  ),
+                                ),
+                              ),
+                              if (!_isTracking) ...[
+                                Container(
+                                  width: 1,
+                                  height: 12,
+                                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                                  color: borderGlass,
+                                ),
+                                Icon(
+                                  Icons.battery_charging_full,
+                                  size: 14,
+                                  color: _ebikeConfig.isLowBattery
+                                      ? Colors.redAccent
+                                      : const Color(0xFF00A86B),
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  '${_ebikeConfig.remainingRangeKm.toStringAsFixed(0)}km',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurfaceVariant,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                  ),
+                                ),
+                                if (_ebikeConfig.bluetoothAutoTrackEnabled &&
+                                    _ebikeConfig.hasBoundBluetooth) ...[
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    _ebikeConfig.isBleMode
+                                        ? Icons.radar_rounded
+                                        : Icons.bluetooth_connected,
+                                    size: 14,
+                                    color: const Color(0xFF1E88E5),
+                                  ),
+                                ],
+                              ] else ...[
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Icons.fullscreen,
+                                  size: 16,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // 右侧：统一磨砂工具胶囊（定位回中 / 防断连体检 / 地图设置）
+                    Container(
                       height: 42,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
                       decoration: BoxDecoration(
                         color: surfaceGlass,
                         borderRadius: BorderRadius.circular(21),
@@ -4042,117 +3313,80 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _isTracking
-                                  ? (_isPaused
-                                      ? Colors.orangeAccent
-                                      : const Color(0xFF00C853))
-                                  : cs.primary,
-                            ),
+                          _topToolIconBtn(
+                            icon: Icons.my_location_rounded,
+                            tooltip: '回到当前位置',
+                            color: cs.primary,
+                            onTap: _handleLocateMe,
                           ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              _isTracking
-                                  ? (_isPaused ? '已暂停记录' : '骑行记录中')
-                                  : '标准地图',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: cs.onSurface,
-                              ),
-                            ),
+                          Container(width: 1, height: 18, color: borderGlass),
+                          _topToolIconBtn(
+                            icon: Icons.shield_outlined,
+                            tooltip: '骑行防断连体检',
+                            color: cs.onSurfaceVariant,
+                            onTap: () => showBackgroundKeepAliveDialog(context),
                           ),
-                          if (!_isTracking) ...[
-                            Container(
-                              width: 1,
-                              height: 12,
-                              margin: const EdgeInsets.symmetric(horizontal: 8),
-                              color: borderGlass,
-                            ),
-                            Icon(
-                              Icons.battery_charging_full,
-                              size: 14,
-                              color: _ebikeConfig.isLowBattery
-                                  ? Colors.redAccent
-                                  : const Color(0xFF00A86B),
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              '${_ebikeConfig.remainingRangeKm.toStringAsFixed(0)}km',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: cs.onSurfaceVariant,
-                                fontFeatures: const [FontFeature.tabularFigures()],
-                              ),
-                            ),
-                            if (_ebikeConfig.bluetoothAutoTrackEnabled &&
-                                _ebikeConfig.hasBoundBluetooth) ...[
-                              const SizedBox(width: 6),
-                              Icon(
-                                _ebikeConfig.isBleMode
-                                    ? Icons.radar_rounded
-                                    : Icons.bluetooth_connected,
-                                size: 14,
-                                color: const Color(0xFF1E88E5),
-                              ),
-                            ],
-                          ] else ...[
-                            const SizedBox(width: 6),
-                            Icon(
-                              Icons.fullscreen,
-                              size: 16,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ],
+                          Container(width: 1, height: 18, color: borderGlass),
+                          _topToolIconBtn(
+                            icon: Icons.tune_rounded,
+                            tooltip: '地图 API 设置',
+                            color: cs.onSurfaceVariant,
+                            onTap: _showApiKeyDialog,
+                          ),
                         ],
                       ),
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                // 右侧：统一磨砂工具胶囊（定位回中 / 防断连体检 / 地图设置）
-                Container(
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: surfaceGlass,
-                    borderRadius: BorderRadius.circular(21),
-                    border: Border.all(color: borderGlass),
-                    boxShadow: softShadow,
+                if (!_isTracking) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: surfaceGlass,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: borderGlass),
+                      boxShadow: softShadow,
+                    ),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          ('NONE', '隐藏轨迹'),
+                          ('TODAY', '今日轨迹'),
+                          ('WEEK', '本周轨迹'),
+                          ('MONTH', '本月轨迹'),
+                          ('ALL', '全部轨迹'),
+                        ].map((item) {
+                          final selected = _historyTrackScope == item.$1;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() => _historyTrackScope = item.$1);
+                              _updateNativeMap();
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: selected ? cs.primary : Colors.transparent,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Text(
+                                item.$2,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                                  color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _topToolIconBtn(
-                        icon: Icons.my_location_rounded,
-                        tooltip: '回到当前位置',
-                        color: cs.primary,
-                        onTap: _handleLocateMe,
-                      ),
-                      Container(width: 1, height: 18, color: borderGlass),
-                      _topToolIconBtn(
-                        icon: Icons.shield_outlined,
-                        tooltip: '骑行防断连体检',
-                        color: cs.onSurfaceVariant,
-                        onTap: () => showBackgroundKeepAliveDialog(context),
-                      ),
-                      Container(width: 1, height: 18, color: borderGlass),
-                      _topToolIconBtn(
-                        icon: Icons.tune_rounded,
-                        tooltip: '地图 API 设置',
-                        color: cs.onSurfaceVariant,
-                        onTap: _showApiKeyDialog,
-                      ),
-                    ],
-                  ),
-                ),
+                ],
               ],
             ),
           ),
@@ -4602,18 +3836,13 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const channel = MethodChannel('com.footprint/data');
-  late TextEditingController _nicknameController;
-  late String _avatarId;
   late String _themeMode;
   late String _themeStyle;
   late bool _hapticEnabled;
-  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    _nicknameController = TextEditingController(text: widget.nickname);
-    _avatarId = widget.avatarId;
     _themeMode = widget.themeMode;
     _themeStyle = widget.themeStyle;
     _hapticEnabled = widget.hapticEnabled;
@@ -4622,29 +3851,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void didUpdateWidget(SettingsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.nickname != widget.nickname &&
-        _nicknameController.text != widget.nickname) {
-      _nicknameController.text = widget.nickname;
-    }
-    if (oldWidget.avatarId != widget.avatarId) _avatarId = widget.avatarId;
     if (oldWidget.themeMode != widget.themeMode) _themeMode = widget.themeMode;
     if (oldWidget.themeStyle != widget.themeStyle) _themeStyle = widget.themeStyle;
     if (oldWidget.hapticEnabled != widget.hapticEnabled) _hapticEnabled = widget.hapticEnabled;
   }
 
-  @override
-  void dispose() {
-    _nicknameController.dispose();
-    _debounce?.cancel();
-    super.dispose();
-  }
-
   void _up(String m, dynamic v) async {
     setState(() {
       switch (m) {
-        case 'updateAvatar':
-          _avatarId = v as String;
-          break;
         case 'updateThemeMode':
           _themeMode = v as String;
           break;
@@ -4683,7 +3897,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label成功！'), backgroundColor: Colors.green));
           widget.onUpdate();
         } else {
-          // Some operations might return false or null if cancelled (like file picker)
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已取消$label或$label失败')));
         }
       }
@@ -4693,151 +3906,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label失败: $e'), backgroundColor: Colors.red));
       }
     }
-  }
-
-  void _onNicknameChanged(String v) {
-    if (_debounce?.isActive ?? false) _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 600), () async {
-      _up('updateNickname', v);
-      
-      // Covert check for "Lucas"
-      // Requirement: Only "Lucas" or "Ace" can trigger the cosmic secret.
-      final magicLucas = String.fromCharCodes([76, 117, 99, 97, 115]);
-      final magicAce = String.fromCharCodes([65, 99, 101]);
-      
-      if (v.trim() == magicLucas || v.trim() == magicAce) {
-        if (!widget.isMaintValid) {
-          _startSecretSequence(context, v.trim());
-        }
-      } else {
-        if (widget.isMaintValid) {
-          await channel.invokeMethod('syncMaintMode', false);
-          widget.onUpdate();
-        }
-      }
-    });
-  }
-
-    void _startSecretSequence(BuildContext context, String username) async {
-    // Stage 1: The Whisper Trigger
-    FocusManager.instance.primaryFocus?.unfocus();
-    
-    // Play with audio ducking feel by showing a subtle overlay
-    final bool? unlocked = await showGeneralDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.8),
-      transitionDuration: const Duration(milliseconds: 1500),
-      pageBuilder: (context, anim, _) {
-        return SecretAstrolabeSequence(
-          username: username,
-          onSuccess: () {
-            Navigator.pop(context, true);
-          },
-        );
-      },
-      transitionBuilder: (context, anim, _, child) {
-        // Desaturation Wash: 1.5s
-        return ColorFiltered(
-          colorFilter: ColorFilter.matrix([
-            0.2126 + 0.7874 * (1 - anim.value), 0.7152 - 0.7152 * (1 - anim.value), 0.0722 - 0.0722 * (1 - anim.value), 0, 0,
-            0.2126 - 0.2126 * (1 - anim.value), 0.7152 + 0.2848 * (1 - anim.value), 0.0722 - 0.0722 * (1 - anim.value), 0, 0,
-            0.2126 - 0.2126 * (1 - anim.value), 0.7152 - 0.7152 * (1 - anim.value), 0.0722 + 0.9278 * (1 - anim.value), 0, 0,
-            0, 0, 0, 1, 0,
-          ]),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8 * anim.value, sigmaY: 8 * anim.value),
-            child: Container(
-              color: const Color(0xFFD9C5B2).withValues(alpha: 0.15 * anim.value),
-              child: FadeTransition(opacity: anim, child: child),
-            ),
-          ),
-        );
-      }
-    );
-
-    if (unlocked == true) {
-      if (mounted) _showMagicPopup(context, username);
-    }
-  }
-
-  void _showMagicPopup(BuildContext context, String username) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: "Magic",
-      transitionDuration: const Duration(milliseconds: 600),
-      pageBuilder: (ctx, anim1, anim2) {
-        return Center(
-          child: Container(
-            margin: const EdgeInsets.all(32),
-            child: Material(
-              color: Colors.transparent,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(32),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                  child: Container(
-                    padding: const EdgeInsets.all(32),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                      borderRadius: BorderRadius.circular(32),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                         const Icon(
-                          Icons.bolt, 
-                          color: Colors.blueAccent, 
-                          size: 64
-                         ),
-                        const SizedBox(height: 24),
-                        Text(
-                          "致 $username",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          "在这个星球的经纬交错中，\n遇见你是最美的坐标。\n\n新功能入口已开启，\n愿此后的每一段足迹都有光。",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white70, fontSize: 16, height: 1.6),
-                        ),
-                        const SizedBox(height: 32),
-                        FilledButton(
-                          onPressed: () {
-                            channel.invokeMethod('syncMaintMode');
-                            Navigator.pop(ctx);
-                            widget.onUpdate();
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: Colors.black,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                          ),
-                          child: const Text("开启探索", style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (ctx, anim1, anim2, child) {
-        return ScaleTransition(
-          scale: CurvedAnimation(parent: anim1, curve: Curves.elasticOut),
-          child: FadeTransition(opacity: anim1, child: child),
-        );
-      },
-    );
   }
 
   @override
@@ -4851,86 +3919,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _t("数字身份", cs),
-          _card(
-            cs,
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: TextField(
-                    controller: _nicknameController,
-                    decoration: const InputDecoration(
-                      labelText: '代号 (Nickname)',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: _onNicknameChanged,
-                  ),
-                ),
-                const Text(
-                  "头像选择",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: ["avatar_1", "avatar_2", "avatar_3", "avatar_4"]
-                      .map(
-                        (id) => GestureDetector(
-                          onTap: () => _up('updateAvatar', id),
-                          child: CircleAvatar(
-                            radius: 26,
-                            backgroundColor: _avatarId == id
-                                ? cs.primary
-                                : cs.surfaceContainerHighest,
-                            child: Icon(
-                              _getAv(id),
-                              color: _avatarId == id
-                                  ? Colors.white
-                                  : cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-                const SizedBox(height: 16),
-                if (_avatarId.contains('/') || _avatarId.contains('\\'))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: buildAvatar(_avatarId, radius: 40),
-                  ),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    try {
-                      final picker = ImagePicker();
-                      final file = await picker.pickImage(
-                        source: ImageSource.gallery,
-                        requestFullMetadata: false,
-                      );
-                      if (file != null) {
-                        _up('updateAvatar', file.path);
-                      }
-                    } catch (e) {
-                      debugPrint("Avatar Picker Error: $e");
-                      String errorMsg = e.toString();
-                      if (errorMsg.contains("missing_valid_image_uri")) {
-                        errorMsg = "系统无法找到选定的图片，请尝试从本地相册选取而非云端同步图片。";
-                      }
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("上传头像失败: $errorMsg"))
-                        );
-                      }
-                    }
-                  },
-                  icon: const Icon(Icons.upload),
-                  label: const Text("上传自定义图片作为头像"),
-                ),
-                const SizedBox(height: 16),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
           _t("系统模式", cs),
           _card(
             cs,

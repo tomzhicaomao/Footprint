@@ -142,4 +142,102 @@ void main() {
       expect(find.text('朝阳区建国路'), findsOneWidget);
     });
   });
+
+  group('Day/Week/Month/Year trip period analytics', () {
+    final sampleEntries = [
+      {
+        'id': 1,
+        'title': '早通勤',
+        'happenedOn': '2026-11-28',
+        'distanceKm': 6.5,
+        'durationSec': 1200,
+        'avgSpeedKmh': 19.5,
+      },
+      {
+        'id': 2,
+        'title': '晚回家',
+        'happenedOn': '2026-11-28',
+        'distanceKm': 7.5,
+        'durationSec': 1500,
+        'avgSpeedKmh': 18.0,
+      },
+      {
+        'id': 3,
+        'title': '周中买菜',
+        'happenedOn': '2026-11-25',
+        'distanceKm': 3.0,
+        'durationSec': 600,
+        'avgSpeedKmh': 18.0,
+      },
+      {
+        'id': 4,
+        'title': '月初出行',
+        'happenedOn': '2026-11-02',
+        'distanceKm': 12.0,
+        'durationSec': 1800,
+        'avgSpeedKmh': 24.0,
+      },
+      {
+        'id': 5,
+        'title': '上个月长途',
+        'happenedOn': '2026-10-15',
+        'distanceKm': 20.0,
+        'durationSec': 3600,
+        'avgSpeedKmh': 20.0,
+      },
+    ];
+
+    test('aggregates day, week, month, and year summaries accurately', () {
+      final anchor = DateTime(2026, 11, 28);
+
+      final day = computeTripPeriodSummary(sampleEntries, TripStatsPeriod.day, anchor, now: anchor);
+      expect(day.tripCount, 2);
+      expect(day.totalDistanceKm, closeTo(14.0, 0.01));
+      expect(day.totalDurationSec, 2700);
+      expect(day.bars, isEmpty);
+
+      final week = computeTripPeriodSummary(sampleEntries, TripStatsPeriod.week, anchor, now: anchor);
+      expect(week.tripCount, 3);
+      expect(week.totalDistanceKm, closeTo(17.0, 0.01));
+      expect(week.bars.length, 7);
+
+      final month = computeTripPeriodSummary(sampleEntries, TripStatsPeriod.month, anchor, now: anchor);
+      expect(month.tripCount, 4);
+      expect(month.totalDistanceKm, closeTo(29.0, 0.01));
+      expect(month.bars.length, 30);
+
+      final year = computeTripPeriodSummary(sampleEntries, TripStatsPeriod.year, anchor, now: anchor);
+      expect(year.tripCount, 5);
+      expect(year.totalDistanceKm, closeTo(49.0, 0.01));
+      expect(year.bars.length, 12);
+    });
+
+    testWidgets('PeriodTripStatsCard switches periods and triggers callbacks', (tester) async {
+      TripStatsPeriod? pickedPeriod;
+      int? shifted;
+      final anchor = DateTime(2026, 11, 28);
+      final summary = computeTripPeriodSummary(sampleEntries, TripStatsPeriod.week, anchor, now: anchor);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PeriodTripStatsCard(
+              summary: summary,
+              onPeriodChanged: (p) => pickedPeriod = p,
+              onShiftAnchor: (d) => shifted = d,
+              onResetToToday: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.textContaining('17.0', findRichText: true), findsOneWidget);
+      expect(find.textContaining('3', findRichText: true), findsWidgets);
+      await tester.tap(find.text('月'));
+      expect(pickedPeriod, TripStatsPeriod.month);
+
+      await tester.tap(find.byIcon(Icons.chevron_left_rounded));
+      expect(shifted, -1);
+    });
+  });
 }

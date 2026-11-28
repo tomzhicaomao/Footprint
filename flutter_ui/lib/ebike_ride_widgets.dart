@@ -355,7 +355,7 @@ class EbikeGarageCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '累计骑行 $ebikeRideCount 次 · 减碳 ${(totalEbikeKm * 0.14).toStringAsFixed(1)} kg',
+                      '累计骑行 $ebikeRideCount 次 · 共 ${totalEbikeKm.toStringAsFixed(1)} km',
                       style: TextStyle(fontSize: 11, color: cs.outline),
                     ),
                   ],
@@ -374,27 +374,6 @@ class EbikeGarageCard extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-
-          // Mileage 4-column summary
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest.withValues(alpha: isDark ? 0.35 : 0.55),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                _mileageCell(cs, '今日', todayKm),
-                _vDivider(cs),
-                _mileageCell(cs, '本周', weekKm),
-                _vDivider(cs),
-                _mileageCell(cs, '本月', monthKm),
-                _vDivider(cs),
-                _mileageCell(cs, '累计', totalEbikeKm),
-              ],
-            ),
           ),
           const SizedBox(height: 14),
 
@@ -2852,3 +2831,514 @@ class _SpeedChartPainter extends CustomPainter {
     return oldDelegate.speeds != speeds || oldDelegate.avgSpeed != avgSpeed;
   }
 }
+
+enum TripStatsPeriod { day, week, month, year }
+
+class TripChartBar {
+  final String label;
+  final double distanceKm;
+  final bool isHighlighted;
+
+  const TripChartBar({
+    required this.label,
+    required this.distanceKm,
+    this.isHighlighted = false,
+  });
+}
+
+class TripPeriodSummary {
+  final TripStatsPeriod period;
+  final String periodLabel;
+  final bool isCurrentPeriod;
+  final double totalDistanceKm;
+  final int tripCount;
+  final int totalDurationSec;
+  final double avgSpeedKmh;
+  final double maxDistanceKm;
+  final int activeDays;
+  final List<TripChartBar> bars;
+  final List<dynamic> entries;
+
+  const TripPeriodSummary({
+    required this.period,
+    required this.periodLabel,
+    required this.isCurrentPeriod,
+    required this.totalDistanceKm,
+    required this.tripCount,
+    required this.totalDurationSec,
+    required this.avgSpeedKmh,
+    required this.maxDistanceKm,
+    required this.activeDays,
+    required this.bars,
+    required this.entries,
+  });
+}
+
+DateTime? _parseEntryLocalDate(dynamic entry) {
+  final raw = entry['happenedOn']?.toString();
+  if (raw != null && raw.length >= 10) {
+    final dt = DateTime.tryParse(raw.substring(0, 10));
+    if (dt != null) return DateTime(dt.year, dt.month, dt.day);
+  }
+  final ts = (entry['timestamp'] as num?)?.toInt();
+  if (ts != null && ts > 0) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+    return DateTime(dt.year, dt.month, dt.day);
+  }
+  return null;
+}
+
+DateTime shiftTripAnchor(DateTime anchor, TripStatsPeriod period, int delta) {
+  switch (period) {
+    case TripStatsPeriod.day:
+      return DateTime(anchor.year, anchor.month, anchor.day + delta);
+    case TripStatsPeriod.week:
+      return DateTime(anchor.year, anchor.month, anchor.day + delta * 7);
+    case TripStatsPeriod.month:
+      return DateTime(anchor.year, anchor.month + delta, 1);
+    case TripStatsPeriod.year:
+      return DateTime(anchor.year + delta, 1, 1);
+  }
+}
+
+TripPeriodSummary computeTripPeriodSummary(
+  List<dynamic> allEntries,
+  TripStatsPeriod period,
+  DateTime anchorDate, {
+  DateTime? now,
+}) {
+  final refNow = now ?? DateTime.now();
+  final today = DateTime(refNow.year, refNow.month, refNow.day);
+  final anchor = DateTime(anchorDate.year, anchorDate.month, anchorDate.day);
+
+  late DateTime rangeStart;
+  late DateTime rangeEnd; // inclusive date
+  late String label;
+  late bool isCurrent;
+
+  switch (period) {
+    case TripStatsPeriod.day:
+      rangeStart = anchor;
+      rangeEnd = anchor;
+      isCurrent = anchor == today;
+      final yesterday = today.subtract(const Duration(days: 1));
+      if (isCurrent) {
+        label = '${anchor.month}月${anchor.day}日 · 今天';
+      } else if (anchor == yesterday) {
+        label = '${anchor.month}月${anchor.day}日 · 昨天';
+      } else {
+        label = '${anchor.year}-${anchor.month.toString().padLeft(2, '0')}-${anchor.day.toString().padLeft(2, '0')}';
+      }
+      break;
+    case TripStatsPeriod.week:
+      rangeStart = anchor.subtract(Duration(days: anchor.weekday - 1));
+      rangeEnd = rangeStart.add(const Duration(days: 6));
+      final thisWeekStart = today.subtract(Duration(days: today.weekday - 1));
+      isCurrent = rangeStart == thisWeekStart;
+      label = isCurrent
+          ? '本周 (${rangeStart.month}/${rangeStart.day} - ${rangeEnd.month}/${rangeEnd.day})'
+          : '${rangeStart.month}/${rangeStart.day} - ${rangeEnd.month}/${rangeEnd.day}';
+      break;
+    case TripStatsPeriod.month:
+      rangeStart = DateTime(anchor.year, anchor.month, 1);
+      rangeEnd = DateTime(anchor.year, anchor.month + 1, 0);
+      isCurrent = anchor.year == today.year && anchor.month == today.month;
+      label = '${anchor.year}年${anchor.month}月${isCurrent ? " · 本月" : ""}';
+      break;
+    case TripStatsPeriod.year:
+      rangeStart = DateTime(anchor.year, 1, 1);
+      rangeEnd = DateTime(anchor.year, 12, 31);
+      isCurrent = anchor.year == today.year;
+      label = '${anchor.year}年${isCurrent ? " · 今年" : ""}';
+      break;
+  }
+
+  final filtered = <dynamic>[];
+  double totalKm = 0.0;
+  double maxKm = 0.0;
+  int totalSec = 0;
+  final activeDays = <String>{};
+  final dayBuckets = <String, double>{};
+  final monthBuckets = List<double>.filled(12, 0.0);
+
+  for (final e in allEntries) {
+    final dt = _parseEntryLocalDate(e);
+    if (dt == null) continue;
+    if (dt.isBefore(rangeStart) || dt.isAfter(rangeEnd)) continue;
+
+    filtered.add(e);
+    final dKm = (e['distanceKm'] as num?)?.toDouble() ?? 0.0;
+    final dur = (e['durationSec'] as num?)?.toInt() ?? 0;
+    totalKm += dKm;
+    if (dKm > maxKm) maxKm = dKm;
+    totalSec += dur;
+    final key = '${dt.year}-${dt.month}-${dt.day}';
+    activeDays.add(key);
+    dayBuckets[key] = (dayBuckets[key] ?? 0.0) + dKm;
+    monthBuckets[dt.month - 1] += dKm;
+  }
+
+  filtered.sort((a, b) {
+    final cmp = (b['happenedOn'] ?? '').toString().compareTo((a['happenedOn'] ?? '').toString());
+    if (cmp != 0) return cmp;
+    final tsA = (a['timestamp'] as num?)?.toInt() ?? 0;
+    final tsB = (b['timestamp'] as num?)?.toInt() ?? 0;
+    if (tsA != tsB) return tsB.compareTo(tsA);
+    return ((b['id'] as num?)?.toInt() ?? 0).compareTo((a['id'] as num?)?.toInt() ?? 0);
+  });
+
+  double avgSpeed = 0.0;
+  if (totalSec > 0 && totalKm > 0) {
+    avgSpeed = totalKm / (totalSec / 3600.0);
+  } else if (filtered.isNotEmpty) {
+    final speeds = filtered
+        .map((e) => (e['avgSpeedKmh'] as num?)?.toDouble() ?? 0.0)
+        .where((v) => v > 0.1)
+        .toList();
+    if (speeds.isNotEmpty) {
+      avgSpeed = speeds.reduce((a, b) => a + b) / speeds.length;
+    }
+  }
+
+  final bars = <TripChartBar>[];
+  if (period == TripStatsPeriod.week) {
+    const weekNames = ['一', '二', '三', '四', '五', '六', '日'];
+    for (int i = 0; i < 7; i++) {
+      final d = rangeStart.add(Duration(days: i));
+      final key = '${d.year}-${d.month}-${d.day}';
+      bars.add(TripChartBar(
+        label: weekNames[i],
+        distanceKm: dayBuckets[key] ?? 0.0,
+        isHighlighted: d == today,
+      ));
+    }
+  } else if (period == TripStatsPeriod.month) {
+    final daysInMonth = rangeEnd.day;
+    for (int day = 1; day <= daysInMonth; day++) {
+      final d = DateTime(rangeStart.year, rangeStart.month, day);
+      final key = '${d.year}-${d.month}-${d.day}';
+      bars.add(TripChartBar(
+        label: (day == 1 || day % 5 == 0 || day == daysInMonth) ? '$day' : '',
+        distanceKm: dayBuckets[key] ?? 0.0,
+        isHighlighted: d == today,
+      ));
+    }
+  } else if (period == TripStatsPeriod.year) {
+    for (int m = 1; m <= 12; m++) {
+      bars.add(TripChartBar(
+        label: '$m月',
+        distanceKm: monthBuckets[m - 1],
+        isHighlighted: rangeStart.year == today.year && m == today.month,
+      ));
+    }
+  }
+
+  return TripPeriodSummary(
+    period: period,
+    periodLabel: label,
+    isCurrentPeriod: isCurrent,
+    totalDistanceKm: totalKm,
+    tripCount: filtered.length,
+    totalDurationSec: totalSec,
+    avgSpeedKmh: avgSpeed,
+    maxDistanceKm: maxKm,
+    activeDays: activeDays.length,
+    bars: bars,
+    entries: filtered,
+  );
+}
+
+String formatCompactDuration(int seconds) {
+  if (seconds <= 0) return '0分';
+  final h = seconds ~/ 3600;
+  final m = (seconds % 3600) ~/ 60;
+  if (h > 0) return '${h}h${m}m';
+  return '${math.max(1, m)}分';
+}
+
+/// 日 / 周 / 月 / 年 四维行程统计中心卡片
+class PeriodTripStatsCard extends StatelessWidget {
+  final TripPeriodSummary summary;
+  final ValueChanged<TripStatsPeriod> onPeriodChanged;
+  final ValueChanged<int> onShiftAnchor;
+  final VoidCallback onResetToToday;
+
+  const PeriodTripStatsCard({
+    super.key,
+    required this.summary,
+    required this.onPeriodChanged,
+    required this.onShiftAnchor,
+    required this.onResetToToday,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final maxBarKm = summary.bars.fold<double>(
+      0.0,
+      (prev, b) => b.distanceKm > prev ? b.distanceKm : prev,
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.65)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Period segmented selector: 日 / 周 / 月 / 年
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest.withValues(alpha: isDark ? 0.4 : 0.65),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: const [
+                (TripStatsPeriod.day, '日'),
+                (TripStatsPeriod.week, '周'),
+                (TripStatsPeriod.month, '月'),
+                (TripStatsPeriod.year, '年'),
+              ].map((item) {
+                final selected = summary.period == item.$1;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => onPeriodChanged(item.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      decoration: BoxDecoration(
+                        color: selected ? cs.surface : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: selected
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Center(
+                        child: Text(
+                          item.$2,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                            color: selected ? cs.primary : cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Date navigator
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => onShiftAnchor(-1),
+                icon: const Icon(Icons.chevron_left_rounded, size: 22),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+              ),
+              Expanded(
+                child: Text(
+                  summary.periodLabel,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: cs.onSurface,
+                  ),
+                ),
+              ),
+              if (!summary.isCurrentPeriod)
+                TextButton(
+                  onPressed: onResetToToday,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                  ),
+                  child: const Text('今天', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              IconButton(
+                onPressed: () => onShiftAnchor(1),
+                icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // 4-Metric summary row
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest.withValues(alpha: isDark ? 0.28 : 0.45),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                _statCell(
+                  cs,
+                  '总里程',
+                  summary.totalDistanceKm >= 100
+                      ? summary.totalDistanceKm.toStringAsFixed(0)
+                      : summary.totalDistanceKm.toStringAsFixed(1),
+                  'km',
+                  highlight: true,
+                ),
+                _divider(cs),
+                _statCell(cs, '行程', '${summary.tripCount}', '次'),
+                _divider(cs),
+                _statCell(cs, '时长', formatCompactDuration(summary.totalDurationSec), ''),
+                _divider(cs),
+                _statCell(
+                  cs,
+                  '均速',
+                  summary.avgSpeedKmh > 0.1
+                      ? summary.avgSpeedKmh.toStringAsFixed(1)
+                      : '--',
+                  summary.avgSpeedKmh > 0.1 ? 'km/h' : '',
+                ),
+              ],
+            ),
+          ),
+
+          // Lightweight bar chart for week / month / year
+          if (summary.bars.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 92,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: summary.bars.map((bar) {
+                  final ratio = maxBarKm > 0
+                      ? (bar.distanceKm / maxBarKm).clamp(0.0, 1.0)
+                      : 0.0;
+                  final barHeight = bar.distanceKm > 0 ? (6.0 + 46.0 * ratio) : 3.0;
+                  final barColor = bar.distanceKm <= 0
+                      ? cs.outlineVariant.withValues(alpha: 0.35)
+                      : (bar.isHighlighted
+                          ? cs.primary
+                          : cs.primary.withValues(alpha: 0.55));
+                  return Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (summary.period != TripStatsPeriod.month && bar.distanceKm >= 0.1)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(
+                              bar.distanceKm >= 10
+                                  ? bar.distanceKm.toStringAsFixed(0)
+                                  : bar.distanceKm.toStringAsFixed(1),
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: bar.isHighlighted ? cs.primary : cs.outline,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.clip,
+                            ),
+                          ),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          margin: EdgeInsets.symmetric(
+                            horizontal: summary.period == TripStatsPeriod.month ? 1.0 : 4.0,
+                          ),
+                          height: barHeight,
+                          decoration: BoxDecoration(
+                            color: barColor,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 14,
+                          child: Text(
+                            bar.label,
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: bar.isHighlighted ? FontWeight.bold : FontWeight.normal,
+                              color: bar.isHighlighted ? cs.primary : cs.outline,
+                            ),
+                            maxLines: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _statCell(
+    ColorScheme cs,
+    String label,
+    String value,
+    String unit, {
+    bool highlight = false,
+  }) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: value,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    color: highlight ? cs.primary : cs.onSurface,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                if (unit.isNotEmpty)
+                  TextSpan(
+                    text: ' $unit',
+                    style: TextStyle(fontSize: 10, color: cs.outline),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(fontSize: 11, color: cs.outline)),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider(ColorScheme cs) => Container(
+        width: 1,
+        height: 26,
+        color: cs.outlineVariant.withValues(alpha: 0.4),
+      );
+}
+
