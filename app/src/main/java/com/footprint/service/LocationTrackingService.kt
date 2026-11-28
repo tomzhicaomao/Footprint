@@ -38,6 +38,7 @@ class LocationTrackingService : Service(), AMapLocationListener {
     private lateinit var notificationManager: NotificationManager
     private var _notificationUpdateJob: Job? = null
     private var _btAutoStopJob: Job? = null
+    private var _bleWatchdogJob: Job? = null
     private var _voiceAnnouncer: RideVoiceAnnouncer? = null
     private var _nextVoiceMilestoneKm: Double = 1.0
     private var _lowBatteryVoiceAlerted: Boolean = false
@@ -379,10 +380,17 @@ class LocationTrackingService : Service(), AMapLocationListener {
                         .apply()
 
                 resumeTrackingFlow()
+                startBleWatchdogIfNeeded()
                 val label = getTransportDisplayLabel()
                 if (autoTriggered) {
                     val btName = preferenceManager.bluetoothDeviceName.ifBlank { "爱车蓝牙" }
-                    speakIfEnabled("已连接${btName}，自动开始记录${label}骑行", flush = true)
+                    val prefix =
+                            if (preferenceManager.bluetoothDeviceMode.equals("BLE", ignoreCase = true)) {
+                                "检测到附近${btName}"
+                            } else {
+                                "已连接${btName}"
+                            }
+                    speakIfEnabled("${prefix}，自动开始记录${label}骑行", flush = true)
                 } else {
                     speakIfEnabled("开始记录${label}骑行，祝您一路平安", flush = true)
                 }
@@ -395,6 +403,7 @@ class LocationTrackingService : Service(), AMapLocationListener {
                     val currentKm = _totalDistanceTraveled.value / 1000.0
                     _nextVoiceMilestoneKm = (kotlin.math.floor(currentKm / interval) + 1.0) * interval
                     resumeTrackingFlow()
+                    startBleWatchdogIfNeeded()
                     Log.d("FootprintLoc", "定位服务已按持久化状态恢复")
                 } else {
                     stopSelf()
@@ -503,6 +512,10 @@ class LocationTrackingService : Service(), AMapLocationListener {
         cancelRestartAlarm()
         _btAutoStopJob?.cancel()
         _btAutoStopJob = null
+        stopBleWatchdog()
+        if (autoStoppedByBt) {
+            BleProximityManager.markAutoStoppedNow()
+        }
 
         val finalDurationMs = totalDurationMs
         val finalDistanceMeters = _totalDistanceTraveled.value.toDouble()
@@ -510,6 +523,7 @@ class LocationTrackingService : Service(), AMapLocationListener {
         val finalTransport = _activeTransportType.value
         val finalStartAddr = _startAddress
         val finalAvgSpeed = avgSpeedKmh
+        val isBleMode = preferenceManager.bluetoothDeviceMode.equals("BLE", ignoreCase = true)
 
         locationClient?.stopLocation()
         _notificationUpdateJob?.cancel()
@@ -529,7 +543,8 @@ class LocationTrackingService : Service(), AMapLocationListener {
         serviceScope.launch {
             withContext(NonCancellable) {
                 var spokeSummary = false
-                if (!discard) {
+                val shouldDiscardTrivialAuto = autoStoppedByBt && finalDistanceMeters < 30.0
+                if (!discard && !shouldDiscardTrivialAuto) {
                     flushPendingTrackPointsSync()
                     saveTrackingSessionAsFootprint(
                             durationMs = finalDurationMs,
@@ -542,7 +557,11 @@ class LocationTrackingService : Service(), AMapLocationListener {
                     if (preferenceManager.voiceAnnounceEnabled && km >= 0.05) {
                         val msg =
                                 if (autoStoppedByBt) {
-                                    "蓝牙已断开，本次骑行${"%.1f".format(km)}公里，轨迹已自动保存"
+                                    if (isBleMode) {
+                                        "已离开爱车，本次骑行${"%.1f".format(km)}公里，轨迹已自动保存"
+                                    } else {
+                                        "蓝牙已断开，本次骑行${"%.1f".format(km)}公里，轨迹已自动保存"
+                                    }
                                 } else {
                                     "骑行结束，本次共骑行${"%.1f".format(km)}公里，平均时速${"%.0f".format(finalAvgSpeed)}公里每小时，轨迹已保存"
                                 }
@@ -554,16 +573,54 @@ class LocationTrackingService : Service(), AMapLocationListener {
                     _totalDistanceTraveled.value = 0.0f
                     _maxSpeedKmh.value = 0.0f
                     _sharedTrackingPath.value = emptyList()
-                    Log.d("FootprintLoc", "Tracking session discarded by user")
+                    Log.d("FootprintLoc", "Tracking session discarded (user=$discard, trivialAuto=$shouldDiscardTrivialAuto)")
                 }
                 if (spokeSummary) {
                     delay(3500L)
                 }
                 locationClient?.disableBackgroundLocation(true)
+                BleProximityManager.syncMonitorState(applicationContext)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }
+    }
+
+    private fun startBleWatchdogIfNeeded() {
+        stopBleWatchdog()
+        if (!preferenceManager.bluetoothAutoTrackEnabled ||
+                        !preferenceManager.bluetoothDeviceMode.equals("BLE", ignoreCase = true) ||
+                        preferenceManager.bluetoothDeviceAddress.isBlank()
+        ) {
+            return
+        }
+        BleProximityManager.startActiveRideScan(applicationContext)
+        if (!preferenceManager.bluetoothAutoStopEnabled) return
+
+        _bleWatchdogJob =
+                serviceScope.launch {
+                    while (isActive && _sharedIsTracking.value) {
+                        delay(10_000L)
+                        if (!_sharedIsTracking.value) break
+                        val timeoutSec = preferenceManager.bleLostTimeoutSec.toLong().coerceIn(20L, 300L)
+                        val lostSec = BleProximityManager.secondsSinceLastSeen()
+                        val currentSpeed = _currentSpeedKmh.value
+                        if (lostSec >= timeoutSec && currentSpeed < 3.5f) {
+                            Log.d(
+                                    "FootprintLoc",
+                                    "BLE e-bike signal lost for ${lostSec}s (timeout=${timeoutSec}s, speed=$currentSpeed) -> auto-stopping"
+                            )
+                            performStopAndSave(discard = false, autoStoppedByBt = true)
+                            break
+                        }
+                    }
+                }
+    }
+
+    private fun stopBleWatchdog() {
+        _bleWatchdogJob?.cancel()
+        _bleWatchdogJob = null
+        BleProximityManager.stopActiveRideScan(applicationContext)
     }
 
     private fun ensureVoiceAnnouncer(): RideVoiceAnnouncer {
@@ -1446,6 +1503,7 @@ class LocationTrackingService : Service(), AMapLocationListener {
 
     override fun onDestroy() {
         _btAutoStopJob?.cancel()
+        stopBleWatchdog()
         if (_sharedIsTracking.value && !_sharedIsPaused.value) {
             persistTrackingSnapshot(forceDistance = true)
             scheduleRestartAlarm()

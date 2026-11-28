@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -16,6 +17,9 @@ class EbikeConfig {
   final bool bluetoothAutoStopEnabled;
   final String bluetoothDeviceAddress;
   final String bluetoothDeviceName;
+  final String bluetoothDeviceMode; // 'BLE' or 'CLASSIC'
+  final int bleRssiThreshold;
+  final int bleLostTimeoutSec;
   final bool voiceAnnounceEnabled;
   final double voiceAnnounceIntervalKm;
   final bool voiceLowBatteryAlertEnabled;
@@ -32,12 +36,16 @@ class EbikeConfig {
     this.bluetoothAutoStopEnabled = true,
     this.bluetoothDeviceAddress = '',
     this.bluetoothDeviceName = '',
+    this.bluetoothDeviceMode = 'BLE',
+    this.bleRssiThreshold = -78,
+    this.bleLostTimeoutSec = 60,
     this.voiceAnnounceEnabled = true,
     this.voiceAnnounceIntervalKm = 1.0,
     this.voiceLowBatteryAlertEnabled = true,
   });
 
   factory EbikeConfig.fromJson(Map<String, dynamic> json) {
+    final rawMode = (json['bluetoothDeviceMode'] as String?) ?? 'BLE';
     return EbikeConfig(
       ebikeName: (json['ebikeName'] as String?)?.isNotEmpty == true
           ? json['ebikeName'] as String
@@ -57,6 +65,12 @@ class EbikeConfig {
       bluetoothDeviceAddress:
           (json['bluetoothDeviceAddress'] as String?) ?? '',
       bluetoothDeviceName: (json['bluetoothDeviceName'] as String?) ?? '',
+      bluetoothDeviceMode:
+          rawMode.toUpperCase() == 'CLASSIC' ? 'CLASSIC' : 'BLE',
+      bleRssiThreshold:
+          ((json['bleRssiThreshold'] as num?)?.toInt() ?? -78).clamp(-95, -55),
+      bleLostTimeoutSec:
+          ((json['bleLostTimeoutSec'] as num?)?.toInt() ?? 60).clamp(20, 300),
       voiceAnnounceEnabled: json['voiceAnnounceEnabled'] as bool? ?? true,
       voiceAnnounceIntervalKm:
           ((json['voiceAnnounceIntervalKm'] as num?)?.toDouble() ?? 1.0)
@@ -75,6 +89,7 @@ class EbikeConfig {
   bool get isLowBattery => batteryFraction <= 0.2;
   bool get isWarnBattery => batteryFraction <= 0.35;
   bool get hasBoundBluetooth => bluetoothDeviceAddress.isNotEmpty;
+  bool get isBleMode => bluetoothDeviceMode.toUpperCase() != 'CLASSIC';
 
   EbikeConfig copyWith({
     String? ebikeName,
@@ -88,6 +103,9 @@ class EbikeConfig {
     bool? bluetoothAutoStopEnabled,
     String? bluetoothDeviceAddress,
     String? bluetoothDeviceName,
+    String? bluetoothDeviceMode,
+    int? bleRssiThreshold,
+    int? bleLostTimeoutSec,
     bool? voiceAnnounceEnabled,
     double? voiceAnnounceIntervalKm,
     bool? voiceLowBatteryAlertEnabled,
@@ -107,6 +125,9 @@ class EbikeConfig {
       bluetoothDeviceAddress:
           bluetoothDeviceAddress ?? this.bluetoothDeviceAddress,
       bluetoothDeviceName: bluetoothDeviceName ?? this.bluetoothDeviceName,
+      bluetoothDeviceMode: bluetoothDeviceMode ?? this.bluetoothDeviceMode,
+      bleRssiThreshold: bleRssiThreshold ?? this.bleRssiThreshold,
+      bleLostTimeoutSec: bleLostTimeoutSec ?? this.bleLostTimeoutSec,
       voiceAnnounceEnabled: voiceAnnounceEnabled ?? this.voiceAnnounceEnabled,
       voiceAnnounceIntervalKm:
           voiceAnnounceIntervalKm ?? this.voiceAnnounceIntervalKm,
@@ -468,11 +489,13 @@ class EbikeGarageCard extends StatelessWidget {
             children: [
               _featurePill(
                 icon: config.bluetoothAutoTrackEnabled && config.hasBoundBluetooth
-                    ? Icons.bluetooth_connected
+                    ? (config.isBleMode
+                        ? Icons.radar_rounded
+                        : Icons.bluetooth_connected)
                     : Icons.bluetooth_disabled,
                 label: config.bluetoothAutoTrackEnabled && config.hasBoundBluetooth
-                    ? '蓝牙自动启停 · ${config.bluetoothDeviceName.isNotEmpty ? config.bluetoothDeviceName : "已绑定"}'
-                    : '蓝牙自动启停 · 去绑定',
+                    ? '${config.isBleMode ? "BLE 近场感应" : "蓝牙自动启停"} · ${config.bluetoothDeviceName.isNotEmpty ? config.bluetoothDeviceName : "已绑定"}'
+                    : '蓝牙/BLE 自动启停 · 去绑定',
                 active: config.bluetoothAutoTrackEnabled && config.hasBoundBluetooth,
                 activeColor: const Color(0xFF1E88E5),
                 cs: cs,
@@ -615,7 +638,7 @@ class EbikeGarageCard extends StatelessWidget {
   }
 }
 
-/// 爱车与骑行设置弹窗（含续航、蓝牙自动启停、语音播报）
+/// 爱车与骑行设置弹窗（含续航、BLE/蓝牙自动启停、语音播报）
 Future<EbikeConfig?> showEbikeConfigSheet(
   BuildContext context,
   EbikeConfig current,
@@ -630,6 +653,9 @@ Future<EbikeConfig?> showEbikeConfigSheet(
   bool btAutoStop = current.bluetoothAutoStopEnabled;
   String btAddress = current.bluetoothDeviceAddress;
   String btName = current.bluetoothDeviceName;
+  String btMode = current.bluetoothDeviceMode;
+  int bleRssiThreshold = current.bleRssiThreshold;
+  int bleLostTimeoutSec = current.bleLostTimeoutSec;
   bool voiceEnabled = current.voiceAnnounceEnabled;
   double voiceIntervalKm = current.voiceAnnounceIntervalKm;
   bool voiceLowBattery = current.voiceLowBatteryAlertEnabled;
@@ -638,109 +664,24 @@ Future<EbikeConfig?> showEbikeConfigSheet(
     BuildContext sheetCtx,
     void Function(VoidCallback) setModalState,
   ) async {
-    try {
-      final status = await Permission.bluetoothConnect.request();
-      if (!status.isGranted) {
-        if (sheetCtx.mounted) {
-          ScaffoldMessenger.of(sheetCtx).showSnackBar(
-            SnackBar(
-              content: const Text('需要授予“附近设备（蓝牙）”权限才能读取已配对设备'),
-              action: SnackBarAction(label: '去设置', onPressed: openAppSettings),
-            ),
-          );
+    final selected = await showDialog<Map<String, String>>(
+      context: sheetCtx,
+      builder: (_) => _BluetoothDevicePickerDialog(
+        channel: channel,
+        currentAddress: btAddress,
+        currentMode: btMode,
+      ),
+    );
+    if (selected != null) {
+      setModalState(() {
+        btName = selected['name'] ?? '';
+        btAddress = selected['address'] ?? '';
+        final pickedMode = selected['mode'];
+        if (pickedMode != null && pickedMode.isNotEmpty) {
+          btMode = pickedMode;
         }
-        return;
-      }
-      final jsonStr = await channel.invokeMethod<String>('getPairedBluetoothDevices');
-      final List<dynamic> devices = jsonStr != null ? jsonDecode(jsonStr) : [];
-      if (!sheetCtx.mounted) return;
-
-      final selected = await showDialog<Map<String, String>>(
-        context: sheetCtx,
-        builder: (dCtx) {
-          final cs = Theme.of(dCtx).colorScheme;
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-            title: const Row(
-              children: [
-                Icon(Icons.bluetooth_searching, size: 22),
-                SizedBox(width: 8),
-                Text('选择已配对蓝牙', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: devices.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        '未找到已配对的蓝牙设备。\n请先在手机系统蓝牙中连接您的电动车或头盔耳机，再回到此处绑定。',
-                        style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant, height: 1.5),
-                      ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: devices.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (_, idx) {
-                        final dev = devices[idx] as Map<String, dynamic>;
-                        final name = (dev['name'] as String?) ?? '未知设备';
-                        final addr = (dev['address'] as String?) ?? '';
-                        final isBound = addr.toUpperCase() == btAddress.toUpperCase();
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(
-                            Icons.bluetooth,
-                            color: isBound ? cs.primary : cs.onSurfaceVariant,
-                          ),
-                          title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text(addr, style: TextStyle(fontSize: 11, color: cs.outline)),
-                          trailing: isBound
-                              ? Icon(Icons.check_circle, color: cs.primary, size: 20)
-                              : null,
-                          onTap: () => Navigator.pop(dCtx, {'name': name, 'address': addr}),
-                        );
-                      },
-                    ),
-            ),
-            actions: [
-              if (btAddress.isNotEmpty)
-                TextButton(
-                  onPressed: () => Navigator.pop(dCtx, {'name': '', 'address': ''}),
-                  child: const Text('解除绑定', style: TextStyle(color: Colors.redAccent)),
-                ),
-              TextButton(
-                onPressed: () => Navigator.pop(dCtx),
-                child: const Text('取消'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (selected != null) {
-        setModalState(() {
-          btName = selected['name'] ?? '';
-          btAddress = selected['address'] ?? '';
-          if (btAddress.isNotEmpty) {
-            btAutoTrack = true;
-          } else {
-            btAutoTrack = false;
-          }
-        });
-      }
-    } on PlatformException catch (e) {
-      if (sheetCtx.mounted) {
-        ScaffoldMessenger.of(sheetCtx).showSnackBar(
-          SnackBar(content: Text(e.message ?? '获取蓝牙设备失败')),
-        );
-      }
-    } catch (e) {
-      if (sheetCtx.mounted) {
-        ScaffoldMessenger.of(sheetCtx).showSnackBar(
-          SnackBar(content: Text('蓝牙读取异常: $e')),
-        );
-      }
+        btAutoTrack = btAddress.isNotEmpty;
+      });
     }
   }
 
@@ -857,17 +798,39 @@ Future<EbikeConfig?> showEbikeConfigSheet(
                       ),
                       const Divider(height: 24),
 
-                      // === 蓝牙自动启停区块 ===
+                      // === 蓝牙 / BLE 近场自动启停区块 ===
                       Row(
                         children: [
-                          const Icon(Icons.bluetooth_connected, size: 18, color: Color(0xFF1E88E5)),
+                          Icon(
+                            btMode.toUpperCase() == 'CLASSIC'
+                                ? Icons.bluetooth_connected
+                                : Icons.radar_rounded,
+                            size: 18,
+                            color: const Color(0xFF1E88E5),
+                          ),
                           const SizedBox(width: 6),
                           Text(
-                            '蓝牙自动启停',
+                            '蓝牙 / BLE 自动启停',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
                               color: cs.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E88E5).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              btMode.toUpperCase() == 'CLASSIC' ? '已配对模式' : 'BLE 免配对',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1E88E5),
+                              ),
                             ),
                           ),
                         ],
@@ -887,7 +850,7 @@ Future<EbikeConfig?> showEbikeConfigSheet(
                                 children: [
                                   Text(
                                     btAddress.isNotEmpty
-                                        ? (btName.isNotEmpty ? btName : '已绑定蓝牙设备')
+                                        ? (btName.isNotEmpty ? btName : '已绑定爱车蓝牙')
                                         : '尚未绑定电动车 / 头盔蓝牙',
                                     style: TextStyle(
                                       fontSize: 13,
@@ -898,8 +861,8 @@ Future<EbikeConfig?> showEbikeConfigSheet(
                                   const SizedBox(height: 2),
                                   Text(
                                     btAddress.isNotEmpty
-                                        ? btAddress
-                                        : '绑定后，连接该蓝牙即自动开始记录',
+                                        ? '${btMode.toUpperCase() == 'CLASSIC' ? '已配对蓝牙' : 'BLE 近场广播'} · $btAddress'
+                                        : '支持扫描无法配对的电动车 BLE 信号，也支持头盔蓝牙',
                                     style: TextStyle(fontSize: 11, color: cs.outline),
                                   ),
                                 ],
@@ -913,15 +876,23 @@ Future<EbikeConfig?> showEbikeConfigSheet(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                               ),
-                              child: Text(btAddress.isNotEmpty ? '更换' : '选择设备'),
+                              child: Text(btAddress.isNotEmpty ? '更换' : '扫描/绑定'),
                             ),
                           ],
                         ),
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('连接绑定蓝牙自动开始骑行'),
-                        subtitle: const Text('支持电动车蓝牙或头盔蓝牙耳机'),
+                        title: Text(
+                          btMode.toUpperCase() == 'CLASSIC'
+                              ? '连接绑定蓝牙自动开始骑行'
+                              : '靠近爱车 BLE 信号自动开始骑行',
+                        ),
+                        subtitle: Text(
+                          btMode.toUpperCase() == 'CLASSIC'
+                              ? '连接已配对蓝牙后自动启动轨迹记录'
+                              : '无需配对，后台低功耗感应到爱车信号即自动记录',
+                        ),
                         value: btAutoTrack,
                         onChanged: (v) async {
                           if (v && btAddress.isEmpty) {
@@ -931,13 +902,84 @@ Future<EbikeConfig?> showEbikeConfigSheet(
                           }
                         },
                       ),
+                      if (btAutoTrack && btMode.toUpperCase() != 'CLASSIC') ...[
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              Text(
+                                '靠近触发灵敏度',
+                                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                              ),
+                              const Spacer(),
+                              Wrap(
+                                spacing: 6,
+                                children: const [
+                                  ('很近', -68),
+                                  ('标准', -78),
+                                  ('较远', -86),
+                                ].map((entry) {
+                                  final sel = (bleRssiThreshold - entry.$2).abs() <= 4;
+                                  return ChoiceChip(
+                                    label: Text(entry.$1),
+                                    selected: sel,
+                                    onSelected: (_) => setModalState(
+                                      () => bleRssiThreshold = entry.$2,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       if (btAutoTrack)
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: const Text('断开蓝牙自动结束并保存'),
-                          subtitle: const Text('断开后等待 20 秒防误判，未重连则自动保存轨迹'),
+                          title: Text(
+                            btMode.toUpperCase() == 'CLASSIC'
+                                ? '断开蓝牙自动结束并保存'
+                                : '离开爱车自动结束并保存',
+                          ),
+                          subtitle: Text(
+                            btMode.toUpperCase() == 'CLASSIC'
+                                ? '断开后等待 20 秒防误判，未重连则自动保存轨迹'
+                                : '停车后连续 $bleLostTimeoutSec 秒收不到车辆信号且静止，自动保存轨迹',
+                          ),
                           value: btAutoStop,
                           onChanged: (v) => setModalState(() => btAutoStop = v),
+                        ),
+                      if (btAutoTrack && btAutoStop && btMode.toUpperCase() != 'CLASSIC')
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              Text(
+                                '离开自动停止延时',
+                                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                              ),
+                              const Spacer(),
+                              Wrap(
+                                spacing: 6,
+                                children: const [
+                                  ('30秒', 30),
+                                  ('60秒', 60),
+                                  ('2分钟', 120),
+                                ].map((entry) {
+                                  final sel = bleLostTimeoutSec == entry.$2;
+                                  return ChoiceChip(
+                                    label: Text(entry.$1),
+                                    selected: sel,
+                                    onSelected: (_) => setModalState(
+                                      () => bleLostTimeoutSec = entry.$2,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
                         ),
                       const Divider(height: 24),
 
@@ -1044,6 +1086,9 @@ Future<EbikeConfig?> showEbikeConfigSheet(
                                 bluetoothAutoStopEnabled: btAutoStop,
                                 bluetoothDeviceAddress: btAddress,
                                 bluetoothDeviceName: btName,
+                                bluetoothDeviceMode: btMode,
+                                bleRssiThreshold: bleRssiThreshold,
+                                bleLostTimeoutSec: bleLostTimeoutSec,
                                 voiceAnnounceEnabled: voiceEnabled,
                                 voiceAnnounceIntervalKm: voiceIntervalKm,
                                 voiceLowBatteryAlertEnabled: voiceLowBattery,
@@ -1073,6 +1118,520 @@ Future<EbikeConfig?> showEbikeConfigSheet(
   );
   nameCtrl.dispose();
   return result;
+}
+
+/// 双模式蓝牙设备选择器：支持「附近 BLE 实时扫描（无需配对）」与「系统已配对蓝牙」
+class _BluetoothDevicePickerDialog extends StatefulWidget {
+  final MethodChannel channel;
+  final String currentAddress;
+  final String currentMode;
+
+  const _BluetoothDevicePickerDialog({
+    required this.channel,
+    required this.currentAddress,
+    required this.currentMode,
+  });
+
+  @override
+  State<_BluetoothDevicePickerDialog> createState() =>
+      _BluetoothDevicePickerDialogState();
+}
+
+class _BluetoothDevicePickerDialogState
+    extends State<_BluetoothDevicePickerDialog> {
+  int _tabIndex = 0; // 0 = BLE nearby scan, 1 = Classic paired
+  bool _isScanning = false;
+  bool _showUnnamed = false;
+  String? _bleError;
+  String? _pairedError;
+  List<Map<String, dynamic>> _bleDevices = [];
+  List<Map<String, dynamic>> _pairedDevices = [];
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabIndex = widget.currentMode.toUpperCase() == 'CLASSIC' &&
+            widget.currentAddress.isNotEmpty
+        ? 1
+        : 0;
+    if (_tabIndex == 0) {
+      _startBleScan();
+    } else {
+      _loadPairedDevices();
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopBleScan();
+    super.dispose();
+  }
+
+  Future<void> _startBleScan() async {
+    _stopBleScan(updateUi: false);
+    if (mounted) {
+      setState(() {
+        _bleError = null;
+        _isScanning = true;
+      });
+    }
+    try {
+      final results = await [
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
+      ].request();
+      final scanGranted = results[Permission.bluetoothScan]?.isGranted ?? false;
+      if (!scanGranted) {
+        // On Android <= 11, bluetoothScan may report denied/unsupported; fallback to location check
+        final locGranted = await Permission.locationWhenInUse.isGranted ||
+            (await Permission.locationWhenInUse.request()).isGranted;
+        if (!locGranted) {
+          if (mounted) {
+            setState(() {
+              _isScanning = false;
+              _bleError = '需要授予“附近设备（蓝牙扫描）”与定位权限才能扫描电动车 BLE 信号';
+            });
+          }
+          return;
+        }
+      }
+
+      await widget.channel.invokeMethod('startBleScan');
+      await _refreshBleSnapshot();
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 900), (_) {
+        _refreshBleSnapshot();
+      });
+    } on PlatformException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+          _bleError = e.message ?? '启动 BLE 扫描失败';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+          _bleError = 'BLE 扫描异常: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshBleSnapshot() async {
+    if (!mounted) return;
+    try {
+      final jsonStr =
+          await widget.channel.invokeMethod<String>('getScannedBleDevices');
+      if (!mounted) return;
+      final List<dynamic> list = jsonStr != null ? jsonDecode(jsonStr) : [];
+      setState(() {
+        _bleDevices =
+            list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      });
+    } catch (_) {}
+  }
+
+  void _stopBleScan({bool updateUi = true}) {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    widget.channel.invokeMethod('stopBleScan').catchError((_) {});
+    if (updateUi && mounted) {
+      setState(() => _isScanning = false);
+    }
+  }
+
+  Future<void> _loadPairedDevices() async {
+    if (mounted) {
+      setState(() => _pairedError = null);
+    }
+    try {
+      final status = await Permission.bluetoothConnect.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          setState(() => _pairedError = '需要授予“附近设备（蓝牙）”权限才能读取已配对设备');
+        }
+        return;
+      }
+      final jsonStr = await widget.channel
+          .invokeMethod<String>('getPairedBluetoothDevices');
+      if (!mounted) return;
+      final List<dynamic> list = jsonStr != null ? jsonDecode(jsonStr) : [];
+      setState(() {
+        _pairedDevices =
+            list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      });
+    } on PlatformException catch (e) {
+      if (mounted) {
+        setState(() => _pairedError = e.message ?? '获取已配对设备失败');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _pairedError = '读取蓝牙异常: $e');
+      }
+    }
+  }
+
+  (String, Color) _rssiBadge(int rssi) {
+    if (rssi >= -65) return ('极近', const Color(0xFF00A86B));
+    if (rssi >= -78) return ('较近', const Color(0xFF1E88E5));
+    return ('较远', Colors.grey);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final filteredBle = _showUnnamed
+        ? _bleDevices
+        : _bleDevices.where((d) => (d['hasName'] as bool?) == true).toList();
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 8),
+      contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      title: Row(
+        children: [
+          Icon(
+            _tabIndex == 0 ? Icons.radar_rounded : Icons.bluetooth_searching,
+            size: 22,
+            color: const Color(0xFF1E88E5),
+          ),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              '绑定爱车蓝牙信号',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (_tabIndex == 0)
+            IconButton(
+              tooltip: '重新扫描',
+              onPressed: _startBleScan,
+              icon: _isScanning
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 20),
+            ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 360,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Mode Switcher Tabs
+            Row(
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Center(child: Text('附近 BLE (免配对)')),
+                    selected: _tabIndex == 0,
+                    onSelected: (_) {
+                      if (_tabIndex != 0) {
+                        setState(() => _tabIndex = 0);
+                        _startBleScan();
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Center(child: Text('已配对蓝牙')),
+                    selected: _tabIndex == 1,
+                    onSelected: (_) {
+                      if (_tabIndex != 1) {
+                        _stopBleScan();
+                        setState(() => _tabIndex = 1);
+                        _loadPairedDevices();
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_tabIndex == 0) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E88E5).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.tips_and_updates_outlined,
+                        size: 15, color: Color(0xFF1E88E5)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '请靠近电动车（建议先通电/唤醒），按信号强弱实时排序，信号最强的通常是你的车',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: cs.onSurfaceVariant,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  Text(
+                    '已发现 ${filteredBle.length} 个设备',
+                    style: TextStyle(fontSize: 11, color: cs.outline),
+                  ),
+                  const Spacer(),
+                  Text('显示未命名', style: TextStyle(fontSize: 11, color: cs.outline)),
+                  Transform.scale(
+                    scale: 0.78,
+                    child: Switch(
+                      value: _showUnnamed,
+                      onChanged: (v) => setState(() => _showUnnamed = v),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: _bleError != null
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _bleError!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 13, color: cs.error),
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton(
+                              onPressed: openAppSettings,
+                              child: const Text('前往系统设置授权'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : filteredBle.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_isScanning)
+                                  const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                                  ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  _isScanning
+                                      ? '正在扫描附近电动车 BLE 信号...\n若未看到车辆，可打开右上角“显示未命名”'
+                                      : '未扫描到 BLE 设备，请确认手机蓝牙已开启',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: cs.onSurfaceVariant,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: filteredBle.length,
+                            separatorBuilder: (_, _) => const Divider(height: 1),
+                            itemBuilder: (_, idx) {
+                              final dev = filteredBle[idx];
+                              final rawName = (dev['name'] as String?) ?? '';
+                              final displayName =
+                                  rawName.isNotEmpty ? rawName : '未命名 BLE 设备';
+                              final addr = (dev['address'] as String?) ?? '';
+                              final rssi = (dev['rssi'] as num?)?.toInt() ?? -99;
+                              final isLikelyEbike =
+                                  (dev['isLikelyEbike'] as bool?) ?? false;
+                              final isBound = addr.toUpperCase() ==
+                                  widget.currentAddress.toUpperCase();
+                              final (distLabel, distColor) = _rssiBadge(rssi);
+
+                              return ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 2),
+                                leading: Icon(
+                                  isLikelyEbike
+                                      ? Icons.electric_scooter
+                                      : Icons.bluetooth,
+                                  color: isBound
+                                      ? cs.primary
+                                      : (isLikelyEbike
+                                          ? const Color(0xFF00A86B)
+                                          : cs.onSurfaceVariant),
+                                ),
+                                title: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        displayName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isLikelyEbike) ...[
+                                      const SizedBox(width: 5),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF00A86B)
+                                              .withValues(alpha: 0.14),
+                                          borderRadius: BorderRadius.circular(5),
+                                        ),
+                                        child: const Text(
+                                          '疑似爱车',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF00A86B),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  addr,
+                                  style: TextStyle(fontSize: 10, color: cs.outline),
+                                ),
+                                trailing: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '$rssi dBm',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: distColor,
+                                      ),
+                                    ),
+                                    Text(
+                                      distLabel,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: distColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                onTap: () {
+                                  _stopBleScan(updateUi: false);
+                                  Navigator.pop(context, {
+                                    'name': rawName.isNotEmpty
+                                        ? rawName
+                                        : '爱车 BLE (${addr.substring(addr.length > 5 ? addr.length - 5 : 0)})',
+                                    'address': addr,
+                                    'mode': 'BLE',
+                                  });
+                                },
+                              );
+                            },
+                          ),
+              ),
+            ] else ...[
+              Expanded(
+                child: _pairedError != null
+                    ? Center(
+                        child: Text(
+                          _pairedError!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 13, color: cs.error),
+                        ),
+                      )
+                    : _pairedDevices.isEmpty
+                        ? Center(
+                            child: Text(
+                              '未找到系统已配对的蓝牙设备。\n如果你的电动车无法在系统蓝牙里配对，请切回左侧「附近 BLE (免配对)」直接扫描绑定。',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: cs.onSurfaceVariant,
+                                height: 1.5,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: _pairedDevices.length,
+                            separatorBuilder: (_, _) => const Divider(height: 1),
+                            itemBuilder: (_, idx) {
+                              final dev = _pairedDevices[idx];
+                              final name = (dev['name'] as String?) ?? '未知设备';
+                              final addr = (dev['address'] as String?) ?? '';
+                              final isBound = addr.toUpperCase() ==
+                                  widget.currentAddress.toUpperCase();
+                              return ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  Icons.bluetooth_audio,
+                                  color: isBound ? cs.primary : cs.onSurfaceVariant,
+                                ),
+                                title: Text(
+                                  name,
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                subtitle: Text(
+                                  addr,
+                                  style: TextStyle(fontSize: 11, color: cs.outline),
+                                ),
+                                trailing: isBound
+                                    ? Icon(Icons.check_circle,
+                                        color: cs.primary, size: 20)
+                                    : null,
+                                onTap: () {
+                                  Navigator.pop(context, {
+                                    'name': name,
+                                    'address': addr,
+                                    'mode': 'CLASSIC',
+                                  });
+                                },
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        if (widget.currentAddress.isNotEmpty)
+          TextButton(
+            onPressed: () {
+              _stopBleScan(updateUi: false);
+              Navigator.pop(context, {'name': '', 'address': '', 'mode': 'BLE'});
+            },
+            child: const Text('解除绑定', style: TextStyle(color: Colors.redAccent)),
+          ),
+        TextButton(
+          onPressed: () {
+            _stopBleScan(updateUi: false);
+            Navigator.pop(context);
+          },
+          child: const Text('取消'),
+        ),
+      ],
+    );
+  }
 }
 
 /// 地图页底部实时骑行仪表盘卡片

@@ -3,6 +3,7 @@ package com.footprint.receiver
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -12,12 +13,14 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.footprint.MainActivity
 import com.footprint.data.model.TransportType
+import com.footprint.service.BleProximityManager
 import com.footprint.service.LocationTrackingService
 import com.footprint.utils.PreferenceManager
 
 /**
  * Listens for Bluetooth ACL connect/disconnect events for the user's bound e-bike or helmet headset
- * and automatically starts or gracefully stops riding tracking.
+ * and automatically starts or gracefully stops riding tracking. Also re-syncs BLE proximity scanning
+ * whenever the Bluetooth adapter is turned back on.
  */
 class BluetoothTrackingReceiver : BroadcastReceiver() {
 
@@ -29,6 +32,16 @@ class BluetoothTrackingReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
+
+        if (action == BluetoothAdapter.ACTION_STATE_CHANGED) {
+            val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+            if (state == BluetoothAdapter.STATE_ON) {
+                Log.d(TAG, "Bluetooth adapter turned ON, syncing BLE proximity monitor")
+                BleProximityManager.syncMonitorState(context)
+            }
+            return
+        }
+
         if (action != BluetoothDevice.ACTION_ACL_CONNECTED &&
                         action != BluetoothDevice.ACTION_ACL_DISCONNECTED
         ) {

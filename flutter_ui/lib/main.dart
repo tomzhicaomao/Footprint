@@ -20,8 +20,8 @@ import 'easter_egg.dart';
 import 'ebike_ride_widgets.dart';
 import 'package:flutter/foundation.dart';
 
-const String kAppVersionName = '3.9.0';
-const int kAppBuildNumber = 59;
+const String kAppVersionName = '3.9.1';
+const int kAppBuildNumber = 60;
 const String kAppVersionLabel = 'Footprint v$kAppVersionName (Build $kAppBuildNumber)';
 
 const Color kAtelierCanvas = Color(0xFFF4EFE7);
@@ -2043,6 +2043,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'bluetoothAutoStopEnabled': updated.bluetoothAutoStopEnabled,
         'bluetoothDeviceAddress': updated.bluetoothDeviceAddress,
         'bluetoothDeviceName': updated.bluetoothDeviceName,
+        'bluetoothDeviceMode': updated.bluetoothDeviceMode,
+        'bleRssiThreshold': updated.bleRssiThreshold,
+        'bleLostTimeoutSec': updated.bleLostTimeoutSec,
         'voiceAnnounceEnabled': updated.voiceAnnounceEnabled,
         'voiceAnnounceIntervalKm': updated.voiceAnnounceIntervalKm,
         'voiceLowBatteryAlertEnabled': updated.voiceLowBatteryAlertEnabled,

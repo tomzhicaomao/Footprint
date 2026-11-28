@@ -4,11 +4,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.footprint.service.BleProximityManager
 import com.footprint.service.LocationTrackingService
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+            BleProximityManager.syncMonitorState(context)
             val prefs = context.getSharedPreferences("tracking_prefs", Context.MODE_PRIVATE)
             val shouldResumeTracking = prefs.getBoolean("is_tracking", false)
             val isPaused = prefs.getBoolean("is_paused", false)

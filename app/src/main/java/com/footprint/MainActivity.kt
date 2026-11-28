@@ -271,6 +271,10 @@ class MainActivity : FlutterActivity() {
                                             "bluetoothAutoStopEnabled" to prefs.bluetoothAutoStopEnabled,
                                             "bluetoothDeviceAddress" to prefs.bluetoothDeviceAddress,
                                             "bluetoothDeviceName" to prefs.bluetoothDeviceName,
+                                            "bluetoothDeviceMode" to prefs.bluetoothDeviceMode,
+                                            "bleRssiThreshold" to prefs.bleRssiThreshold,
+                                            "bleLostTimeoutSec" to prefs.bleLostTimeoutSec,
+                                            "bleMonitorActive" to com.footprint.service.BleProximityManager.isBackgroundMonitorActive,
                                             "voiceAnnounceEnabled" to prefs.voiceAnnounceEnabled,
                                             "voiceAnnounceIntervalKm" to prefs.voiceAnnounceIntervalKm,
                                             "voiceLowBatteryAlertEnabled" to prefs.voiceLowBatteryAlertEnabled
@@ -290,9 +294,35 @@ class MainActivity : FlutterActivity() {
                             (args?.get("bluetoothAutoStopEnabled") as? Boolean)?.let { prefs.bluetoothAutoStopEnabled = it }
                             (args?.get("bluetoothDeviceAddress") as? String)?.let { prefs.bluetoothDeviceAddress = it }
                             (args?.get("bluetoothDeviceName") as? String)?.let { prefs.bluetoothDeviceName = it }
+                            (args?.get("bluetoothDeviceMode") as? String)?.let { prefs.bluetoothDeviceMode = it }
+                            (args?.get("bleRssiThreshold") as? Number)?.let { prefs.bleRssiThreshold = it.toInt() }
+                            (args?.get("bleLostTimeoutSec") as? Number)?.let { prefs.bleLostTimeoutSec = it.toInt() }
                             (args?.get("voiceAnnounceEnabled") as? Boolean)?.let { prefs.voiceAnnounceEnabled = it }
                             (args?.get("voiceAnnounceIntervalKm") as? Number)?.let { prefs.voiceAnnounceIntervalKm = it.toFloat() }
                             (args?.get("voiceLowBatteryAlertEnabled") as? Boolean)?.let { prefs.voiceLowBatteryAlertEnabled = it }
+                            com.footprint.service.BleProximityManager.syncMonitorState(this@MainActivity)
+                            result.success(true)
+                        }
+                        "startBleScan" -> {
+                            val (ok, errMsg) =
+                                    com.footprint.service.BleProximityManager.startInteractiveScan(
+                                            this@MainActivity
+                                    )
+                            if (ok) {
+                                result.success(true)
+                            } else {
+                                result.error("BLE_SCAN_ERROR", errMsg ?: "启动 BLE 扫描失败", null)
+                            }
+                        }
+                        "getScannedBleDevices" -> {
+                            val snapshot =
+                                    com.footprint.service.BleProximityManager.getScannedDevicesSnapshot()
+                            result.success(gson.toJson(snapshot))
+                        }
+                        "stopBleScan" -> {
+                            com.footprint.service.BleProximityManager.stopInteractiveScan(
+                                    this@MainActivity
+                            )
                             result.success(true)
                         }
                         "getPairedBluetoothDevices" -> {

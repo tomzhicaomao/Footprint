@@ -32,11 +32,17 @@ void main() {
         'bluetoothAutoStopEnabled': true,
         'bluetoothDeviceAddress': 'AA:BB:CC:DD:EE:FF',
         'bluetoothDeviceName': 'Ninebot-F90M',
+        'bluetoothDeviceMode': 'BLE',
+        'bleRssiThreshold': -72,
+        'bleLostTimeoutSec': 90,
         'voiceAnnounceEnabled': true,
         'voiceAnnounceIntervalKm': 2.0,
         'voiceLowBatteryAlertEnabled': true,
       });
       expect(parsed.hasBoundBluetooth, isTrue);
+      expect(parsed.isBleMode, isTrue);
+      expect(parsed.bleRssiThreshold, -72);
+      expect(parsed.bleLostTimeoutSec, 90);
       expect(parsed.bluetoothAutoTrackEnabled, isTrue);
       expect(parsed.bluetoothDeviceName, 'Ninebot-F90M');
       expect(parsed.voiceAnnounceEnabled, isTrue);
@@ -61,7 +67,8 @@ void main() {
                   sinceChargeKm: 20,
                   bluetoothAutoTrackEnabled: true,
                   bluetoothDeviceAddress: '11:22:33:44:55:66',
-                  bluetoothDeviceName: 'Vimoto-V9S',
+                  bluetoothDeviceName: 'Ninebot-F90M',
+                  bluetoothDeviceMode: 'BLE',
                   voiceAnnounceEnabled: true,
                   voiceAnnounceIntervalKm: 2.0,
                 ),
@@ -84,11 +91,11 @@ void main() {
       expect(find.text('测试电驴'), findsOneWidget);
       expect(find.text('预估剩余 60.0 km'), findsOneWidget);
       expect(find.text('75%'), findsOneWidget);
-      expect(find.text('蓝牙自动启停 · Vimoto-V9S'), findsOneWidget);
+      expect(find.text('BLE 近场感应 · Ninebot-F90M'), findsOneWidget);
       expect(find.text('语音播报 · 每2km'), findsOneWidget);
       expect(find.text('一键开始电动车骑行'), findsOneWidget);
 
-      await tester.tap(find.text('蓝牙自动启停 · Vimoto-V9S'));
+      await tester.tap(find.text('BLE 近场感应 · Ninebot-F90M'));
       expect(openedSettings, isTrue);
 
       await tester.tap(find.text('充满重置'));

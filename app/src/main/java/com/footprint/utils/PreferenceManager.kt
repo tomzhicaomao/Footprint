@@ -221,6 +221,22 @@ class PreferenceManager(context: Context) {
         get() = prefs.getString("bt_device_name", "") ?: ""
         set(value) = prefs.edit().putString("bt_device_name", value.trim()).apply()
 
+    // "BLE" (pairing-free proximity scan) or "CLASSIC" (paired ACL connect/disconnect)
+    var bluetoothDeviceMode: String
+        get() = prefs.getString("bt_device_mode", "BLE") ?: "BLE"
+        set(value) {
+            val normalized = if (value.equals("CLASSIC", ignoreCase = true)) "CLASSIC" else "BLE"
+            prefs.edit().putString("bt_device_mode", normalized).apply()
+        }
+
+    var bleRssiThreshold: Int
+        get() = prefs.getInt("ble_rssi_threshold", -78).coerceIn(-95, -55)
+        set(value) = prefs.edit().putInt("ble_rssi_threshold", value.coerceIn(-95, -55)).apply()
+
+    var bleLostTimeoutSec: Int
+        get() = prefs.getInt("ble_lost_timeout_sec", 60).coerceIn(20, 300)
+        set(value) = prefs.edit().putInt("ble_lost_timeout_sec", value.coerceIn(20, 300)).apply()
+
     // --- Ride Voice Announcement (TTS) Preferences ---
     var voiceAnnounceEnabled: Boolean
         get() = prefs.getBoolean("voice_announce_enabled", true)

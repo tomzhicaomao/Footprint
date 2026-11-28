@@ -86,5 +86,8 @@ class FootprintApplication : Application() {
                 calibrationRequest
             )
         }
+
+        // Restore pairing-free BLE proximity monitor for e-bike auto tracking if enabled
+        com.footprint.service.BleProximityManager.syncMonitorState(this)
     }
 }
