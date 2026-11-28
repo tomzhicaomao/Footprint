@@ -160,6 +160,38 @@ class MainActivity : FlutterActivity() {
                                 }
                             }
                         }
+                        // 获取高精度历史轨迹点（按时间范围，不经过迷雾网格四舍五入）
+                        "getHistoryTrackPoints" -> {
+                            val args = call.arguments as? Map<*, *>
+                            val startTime = (args?.get("startTime") as? Number)?.toLong() ?: 0L
+                            val endTime = (args?.get("endTime") as? Number)?.toLong() ?: Long.MAX_VALUE
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                try {
+                                    val points = repository.getTrackPointsOnce(startTime, endTime)
+                                    val ordered =
+                                            points
+                                                    .sortedWith(
+                                                            compareBy<com.footprint.data.local.TrackPointEntity> { it.sessionId }
+                                                                    .thenBy { it.timestamp }
+                                                    )
+                                                    .map {
+                                                        mapOf(
+                                                                "lat" to it.latitude,
+                                                                "lng" to it.longitude,
+                                                                "speed" to it.speed,
+                                                                "sessionId" to it.sessionId,
+                                                                "timestamp" to it.timestamp
+                                                        )
+                                                    }
+                                    val json = gson.toJson(ordered)
+                                    withContext(Dispatchers.Main) { result.success(json) }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        result.error("QUERY_FAILED", e.message, null)
+                                    }
+                                }
+                            }
+                        }
                         // 获取所有去重位置点（用于迷雾探索掩码）
                         "getAllFogPoints" -> {
                             val args = call.arguments as? Map<*, *>

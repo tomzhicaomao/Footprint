@@ -28,8 +28,8 @@ class FlutterMapView(
 ) : PlatformView, MethodChannel.MethodCallHandler {
     companion object {
         private const val MAX_FOG_RENDER_POINTS = 2800
-        private const val MAX_HISTORY_RENDER_POINTS = 3600
-        private const val MAX_SEGMENT_RENDER_POINTS = 220
+        private const val MAX_HISTORY_RENDER_POINTS = 10000
+        private const val MAX_SEGMENT_RENDER_POINTS = 800
     }
 
     private val container = FrameLayout(context)

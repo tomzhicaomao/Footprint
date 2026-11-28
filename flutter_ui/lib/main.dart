@@ -20,8 +20,8 @@ import 'easter_egg.dart';
 import 'ebike_ride_widgets.dart';
 import 'package:flutter/foundation.dart';
 
-const String kAppVersionName = '4.0.1';
-const int kAppBuildNumber = 63;
+const String kAppVersionName = '4.0.2';
+const int kAppBuildNumber = 64;
 const String kAppVersionLabel = 'Footprint v$kAppVersionName (Build $kAppBuildNumber)';
 
 const Color kAtelierCanvas = Color(0xFFF4EFE7);
@@ -2614,6 +2614,7 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   void onTabActivated() {
     _isMapActive = true;
     _loadEbikeConfig();
+    _loadEntries();
     _updateNativeLocationState();
   }
 
@@ -2658,12 +2659,15 @@ class _ExploreMapScreenState extends State<ExploreMapScreen>
   Future<void> _loadEntries() async {
     try {
       final String jsonStr = await dataChannel.invokeMethod('getAllEntries');
-      final String fogPointsJson = await dataChannel.invokeMethod('getAllFogPoints');
-      final String capsulesJson = await dataChannel.invokeMethod('getAllTimeCapsules');
+      final String historyPointsJson = await dataChannel.invokeMethod(
+        'getHistoryTrackPoints',
+        {'startTime': 0},
+      );
+      if (!mounted) return;
       setState(() {
         _allEntries = jsonDecode(jsonStr);
-        _fogPoints = jsonDecode(fogPointsJson);
-        _capsules = jsonDecode(capsulesJson);
+        _fogPoints = jsonDecode(historyPointsJson);
+        _capsules = const [];
       });
       _lastNativeEntriesHash = null;
       _lastNativeCapsulesHash = null;
